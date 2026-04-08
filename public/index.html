@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CC Store">
+<meta name="theme-color" content="#1a2744">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/images/icon-192.png">
+<title>Cluttered Collectibles & Comics</title>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-mark">CC</div>
+      <div class="logo-text">
+        <div class="logo-title">Cluttered Collectibles</div>
+        <div class="logo-sub">& Comics LLC</div>
+      </div>
+    </div>
+    <ul class="nav-links">
+      <li><a href="#" data-page="dashboard"   class="nav-link active"><span class="nav-icon">⚡</span>Dashboard</a></li>
+      <li><a href="#" data-page="players"     class="nav-link"><span class="nav-icon">👥</span>Players</a></li>
+      <li><a href="#" data-page="tournaments" class="nav-link"><span class="nav-icon">🏆</span>Tournaments</a></li>
+      <li><a href="#" data-page="events"      class="nav-link"><span class="nav-icon">📅</span>Events</a></li>
+    </ul>
+    <div class="sidebar-footer">
+      <div class="location-badge">📍 Ignacio & Bayfield, CO</div>
+    </div>
+  </nav>
+  <main id="content">
+    <div id="page-dashboard"   class="page active"></div>
+    <div id="page-players"     class="page"></div>
+    <div id="page-tournaments" class="page"></div>
+    <div id="page-events"      class="page"></div>
+  </main>
+</div>
+
+<div id="modal-overlay" class="hidden">
+  <div id="modal-box">
+    <div id="modal-header">
+      <h2 id="modal-title"></h2>
+      <button id="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+<div id="toast-container"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/app.js"></script>
+<script>if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>
+</body>
+</html>
