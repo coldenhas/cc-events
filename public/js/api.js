@@ -1,9 +1,18 @@
+// ── Base URL ──────────────────────────────────────────────────────────────────
+// When served through Shopify app proxy, API calls must go directly to Railway.
+// When accessed directly at railway URL, relative paths work fine.
+const CC_EVENTS_BASE = (() => {
+  const host = window.location.hostname;
+  if (host.includes('railway.app')) return '';
+  return 'https://cc-events-production.up.railway.app';
+})();
+
 // ── API ───────────────────────────────────────────────────────────────────────
 const api = {
-  get:    async url      => { const r=await fetch(url);             if(!r.ok) throw new Error((await r.json()).error||r.statusText); return r.json(); },
-  post:   async (url,d)  => { const r=await fetch(url,{method:'POST',  headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); if(!r.ok) throw new Error((await r.json()).error||r.statusText); return r.json(); },
-  put:    async (url,d)  => { const r=await fetch(url,{method:'PUT',   headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); if(!r.ok) throw new Error((await r.json()).error||r.statusText); return r.json(); },
-  delete: async url      => { const r=await fetch(url,{method:'DELETE'});                                                                    if(!r.ok) throw new Error((await r.json()).error||r.statusText); return r.json(); },
+  get:    async url      => { const r=await fetch(CC_EVENTS_BASE+url);             if(!r.ok) throw new Error((await r.json()).error||r.statusText); return r.json(); },
+  post:   async (url,d)  => { const r=await fetch(CC_EVENTS_BASE+url,{method:'POST',  headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); if(!r.ok) throw new Error((await r.json()).error||r.statusText); return r.json(); },
+  put:    async (url,d)  => { const r=await fetch(CC_EVENTS_BASE+url,{method:'PUT',   headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); if(!r.ok) throw new Error((await r.json()).error||r.statusText); return r.json(); },
+  delete: async url      => { const r=await fetch(CC_EVENTS_BASE+url,{method:'DELETE'});                                                                    if(!r.ok) throw new Error((await r.json()).error||r.statusText); return r.json(); },
 };
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
