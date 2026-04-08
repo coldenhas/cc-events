@@ -18,7 +18,11 @@ app.use(session({
 // CORS headers for Shopify app proxy / embedded app
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && (origin.includes('myshopify.com') || origin.includes('shopify.com'))) {
+  if (origin && (
+    origin.includes('myshopify.com') ||
+    origin.includes('shopify.com') ||
+    origin.includes('clutteredcollectibles.com')
+  )) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
