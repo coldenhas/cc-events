@@ -159,7 +159,30 @@ async function deletePlayer(id, name) {
 }
 
 async function openPlayerProfile(id) {
-  const p = await api.get(`/api/players/${id}`);
+  const [p, loyalty] = await Promise.all([
+    api.get(`/api/players/${id}`),
+    api.get(`/api/players/${id}/loyalty`).catch(() => ({ found: false })),
+  ]);
+
+  const loyaltyHTML = loyalty.found
+    ? `<div class="card mb-16" style="border-left:3px solid ${loyalty.tier?.color||'#f5c518'}">
+        <div class="flex-between">
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px">Loyalty Member</div>
+            <div style="font-size:22px;font-weight:800;color:#f5c518">${loyalty.balance?.toLocaleString()} pts</div>
+            <div style="font-size:12px;margin-top:2px">${loyalty.tier?.icon||''} <strong>${loyalty.tier?.name||''}</strong> · ${loyalty.tier?.pointsPerDollar||0} pts/$1</div>
+          </div>
+          <div style="text-align:right;font-size:12px;color:var(--text-muted)">
+            ${loyalty.tier?.nextTier ? `<div>${loyalty.tier.pointsToNext?.toLocaleString()} pts to ${loyalty.tier.nextTier.icon} ${loyalty.tier.nextTier.name}</div>` : '<div style="color:#f5c518">Top tier! 👑</div>'}
+          </div>
+        </div>
+      </div>`
+    : `<div class="card mb-16" style="border-left:3px solid var(--border)">
+        <div style="font-size:12px;color:var(--text-muted)">
+          ${p.email ? '⚠ Not a loyalty member — ask them to sign up at clutteredcollectibles.com' : '⚠ No email on file — add email to enable loyalty lookup'}
+        </div>
+      </div>`;
+
   openModal(p.name, `
     <div class="flex-between mb-16">
       <div class="flex-center">
@@ -167,6 +190,7 @@ async function openPlayerProfile(id) {
         <div><div style="font-size:18px;font-weight:700">${p.name}</div><div class="text-muted">${p.email||'No email'}</div></div>
       </div>
     </div>
+    ${loyaltyHTML}
     <div class="two-col mb-16">
       <div><div class="text-muted">Phone</div><div>${p.phone||'—'}</div></div>
       <div><div class="text-muted">City</div><div>${p.city||'—'}</div></div>
@@ -284,11 +308,16 @@ async function openTournamentManager(id) {
       </div>
       <div id="ts-results" class="mb-16"></div>
       <div class="section-title">Registered (${t.players?.length||0})</div>
+      <div id="ts-registered-list">
       ${(t.players||[]).map(p=>`
         <div class="flex-between" style="padding:8px 0;border-bottom:1px solid var(--border)">
-          <span style="font-weight:600">${p.name}</span>
+          <div>
+            <span style="font-weight:600">${p.name}</span>
+            ${p.email ? `<span class="loyalty-badge-inline" id="loy-${p.playerId}" style="font-size:11px;color:#888;margin-left:8px">loading...</span>` : ''}
+          </div>
           <button class="btn btn-sm btn-danger" onclick="removeTourneyPlayer('${id}','${p.playerId}')">Remove</button>
         </div>`).join('')||'<div class="text-muted">None yet</div>'}
+      </div>
       <div class="form-actions mt-16">
         <button class="btn btn-ghost" onclick="openEditTournament('${id}')">Edit Details</button>
         <button class="btn btn-success" onclick="startTournament('${id}')" ${(t.players?.length||0)<2?'disabled title="Need 2+ players"':''}>Start Tournament →</button>
@@ -321,16 +350,50 @@ async function openTournamentManager(id) {
           </div>
           <div class="text-muted">${s.wins}W/${s.losses}L/${s.draws}D = <strong style="color:var(--gold)">${s.points}pts</strong></div>
         </div>`).join('')}`);
+
+  // Load loyalty balances for registered players after modal renders
+  if (t.status === 'registration' && t.players?.length) {
+    setTimeout(() => loadTourneyLoyalty(t.players), 80);
+  }
 }
 
 async function searchForTourney(id, search) {
   if (!search || search.length < 2) return;
   const players = await api.get(`/api/players?search=${encodeURIComponent(search)}`);
-  document.getElementById('ts-results').innerHTML = players.slice(0,5).map(p=>`
+  if (!players.length) { document.getElementById('ts-results').innerHTML = '<div class="text-muted">No players found</div>'; return; }
+
+  // Fetch loyalty data for all results in parallel
+  const loyaltyData = await Promise.all(
+    players.slice(0,5).map(p => api.get(`/api/players/${p._id}/loyalty`).catch(() => ({ found: false })))
+  );
+
+  document.getElementById('ts-results').innerHTML = players.slice(0,5).map((p, i) => {
+    const loy = loyaltyData[i];
+    const loyBadge = loy.found
+      ? `<span style="font-size:11px;color:#f5c518;margin-left:6px">${loy.tier?.icon||''} ${loy.balance?.toLocaleString()} pts</span>`
+      : '';
+    return `
     <div class="flex-between" style="padding:6px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px">
-      <span>${p.name} <span class="text-muted">${p.city||''}</span></span>
+      <span>${p.name} <span class="text-muted">${p.city||''}</span>${loyBadge}</span>
       <button class="btn btn-sm btn-primary" onclick="addTourneyPlayer('${id}','${p._id}')">Add</button>
-    </div>`).join('') || '<div class="text-muted">No players found</div>';
+    </div>`;
+  }).join('');
+}
+
+async function loadTourneyLoyalty(players) {
+  for (const p of players) {
+    if (!p.email) continue;
+    const el = document.getElementById(`loy-${p.playerId}`);
+    if (!el) continue;
+    try {
+      const loy = await api.get(`/api/players/${p.playerId}/loyalty`).catch(() => ({ found: false }));
+      if (loy.found) {
+        el.innerHTML = `${loy.tier?.icon||''} <strong style="color:#f5c518">${loy.balance?.toLocaleString()} pts</strong> · ${loy.tier?.name||''}`;
+      } else {
+        el.innerHTML = '<span style="color:#555">no loyalty account</span>';
+      }
+    } catch(e) { el.innerHTML = ''; }
+  }
 }
 
 async function addTourneyPlayer(tid, pid)    { try { await api.post(`/api/tournaments/${tid}/players`,{playerId:pid}); toast('Player added'); openTournamentManager(tid); } catch(e) { toast(e.message,'error'); } }

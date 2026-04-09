@@ -1,6 +1,7 @@
 const express = require('express');
 const router  = express.Router();
 const { db }  = require('../src/database');
+const { lookupMemberByEmail } = require('../src/loyalty');
 
 // GET /api/players
 router.get('/', async (req, res) => {
@@ -11,7 +12,6 @@ router.get('/', async (req, res) => {
     if (game)   query.games = { $regex: new RegExp(game,'i') };
     if (city)   query.city  = new RegExp(city,'i');
     const players = await db.players.sort(query, { name: 1 });
-    // Attach tournament count per player
     for (const pl of players) {
       const all = await db.tournaments.find({});
       pl.tournamentCount = all.filter(t => (t.players||[]).find(p => p.playerId === pl._id)).length;
@@ -28,6 +28,25 @@ router.get('/:id', async (req, res) => {
     const all = await db.tournaments.find({});
     player.tournamentHistory = all.filter(t => (t.players||[]).find(p => p.playerId === req.params.id));
     res.json(player);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/players/:id/loyalty — look up loyalty balance for a player
+router.get('/:id/loyalty', async (req, res) => {
+  try {
+    const player = await db.players.findOne({ _id: req.params.id });
+    if (!player) return res.status(404).json({ error: 'Player not found' });
+    if (!player.email) return res.json({ found: false, reason: 'No email on file' });
+
+    const member = await lookupMemberByEmail(player.email);
+    if (!member) return res.json({ found: false, reason: 'Not a loyalty member' });
+
+    res.json({
+      found:   true,
+      balance: member.balance,
+      tier:    member.tier,
+      email:   member.email,
+    });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
