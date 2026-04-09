@@ -276,7 +276,7 @@ async function loadTournaments() {
               <td class="text-muted">${fmtDate(t.date)}</td>
               <td>${statusBadge(t.status)}</td>
               <td><div class="td-actions">
-                <button class="btn btn-sm btn-primary" onclick="openTournamentManager('${t._id}')">Manage →</button>
+                <button class="btn btn-sm btn-primary" onclick="navigate('tournament-detail','${t._id}')">Manage →</button>
                 <button class="btn btn-sm btn-danger btn-icon" onclick="deleteTournament('${t._id}','${t.name}')">🗑</button>
               </div></td>
             </tr>`).join('')}
@@ -474,7 +474,8 @@ async function startTournament(id)  { try { await api.post(`/api/tournaments/${i
 async function recordResult(mid, result, tid) { try { await api.put(`/api/tournaments/matches/${mid}`,{result}); openTournamentManager(tid); } catch(e) { toast(e.message,'error'); } }
 async function nextRound(id)        { try { await api.post(`/api/tournaments/${id}/round`);  toast('Next round started'); openTournamentManager(id); } catch(e) { toast(e.message,'error'); } }
 async function finishTournament(id) {
-  if (!confirm('Finish tournament and record final standings?')) return;
+  const ok = await showConfirmDetail('Finish Tournament?', 'This will record final standings and award loyalty points.');
+  if (!ok) return;
   try { const r=await api.post(`/api/tournaments/${id}/finish`); toast(`Complete! Winner: ${r.standings[0]?.name}`); closeModal(); loadTournaments(); }
   catch(e) { toast(e.message,'error'); }
 }
@@ -614,11 +615,15 @@ async function deleteEvent(id, name) {
 // ════════════════════════════════════════════════════════════════════════════
 // NAVIGATION
 // ════════════════════════════════════════════════════════════════════════════
-const loaders = { dashboard:loadDashboard, players:loadPlayers, tournaments:loadTournaments, events:loadEvents };
+const loaders = { dashboard:loadDashboard, players:loadPlayers, tournaments:loadTournaments, events:loadEvents, rankings:loadRankings };
 
-function navigate(page) {
-  document.querySelectorAll('.nav-link').forEach(el => el.classList.toggle('active', el.dataset.page===page));
+function navigate(page, arg) {
+  // tournament-detail is a sub-page — don't update nav highlight
+  if (page !== 'tournament-detail') {
+    document.querySelectorAll('.nav-link').forEach(el => el.classList.toggle('active', el.dataset.page===page));
+  }
   document.querySelectorAll('.page').forEach(el => el.classList.toggle('active', el.id===`page-${page}`));
+  if (page === 'tournament-detail' && arg) { loadTournamentDetail(arg); return; }
   if (loaders[page]) loaders[page]();
 }
 
@@ -630,3 +635,327 @@ function initApp() {
   navigate('dashboard');
 }
 // initApp() is called by index.html after auth check — do not call here
+// ════════════════════════════════════════════════════════════════════════════
+// TOURNAMENT DETAIL — full page live bracket view
+// ════════════════════════════════════════════════════════════════════════════
+async function loadTournamentDetail(id) {
+  const el = document.getElementById('page-tournament-detail');
+  el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div>Loading...</div></div>';
+
+  try {
+    const t = await api.get(`/api/tournaments/${id}`);
+    const currentMatches = (t.matches||[]).filter(m => m.round === t.currentRound);
+    const pending = currentMatches.filter(m => m.result === 'pending').length;
+    const allRounds = [...new Set((t.matches||[]).map(m => m.round))].sort((a,b)=>a-b);
+
+    el.innerHTML = `
+      <div class="page-header">
+        <div>
+          <button class="btn btn-ghost btn-sm" onclick="navigate('tournaments')" style="margin-bottom:8px">← Back</button>
+          <div class="page-title">${t.name}</div>
+          <div class="page-sub">${gameBadge(t.game)} ${statusBadge(t.status)} · Round ${t.currentRound} · ${t.players?.length||0} players</div>
+        </div>
+        <div class="flex gap-8">
+          ${t.status==='active' ? `
+            <button class="btn btn-primary" onclick="nextRoundDetail('${id}')" ${pending>0?'disabled':''}>Next Round →</button>
+            <button class="btn btn-success" onclick="finishTournamentDetail('${id}')" ${pending>0?'disabled':''}>Finish Tournament</button>
+          ` : ''}
+          <button class="btn btn-ghost" onclick="openPrizeManager('${id}')">💰 Prizes</button>
+        </div>
+      </div>
+
+      <!-- Round tabs -->
+      <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+        ${allRounds.map(r => `
+          <button class="btn btn-sm ${r===t.currentRound?'btn-primary':'btn-ghost'}" onclick="showRound('${id}',${r},this)"
+            style="${r===t.currentRound?'':'opacity:0.6'}">Round ${r}</button>
+        `).join('')}
+      </div>
+
+      <!-- Current round matches -->
+      <div id="round-matches-${id}">
+        ${renderRoundMatches(currentMatches, id, t.currentRound)}
+      </div>
+
+      <!-- Standings -->
+      <div style="margin-top:24px">
+        <div class="section-title">Live Standings</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th style="width:40px">#</th>
+              <th>Player</th>
+              <th>W</th><th>L</th><th>D</th>
+              <th>Points</th>
+            </tr></thead>
+            <tbody>
+              ${(t.standings||[]).map((s,i) => `
+                <tr>
+                  <td><div class="standings-rank ${i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other'}">${i+1}</div></td>
+                  <td><strong>${s.name}</strong></td>
+                  <td style="color:var(--green)">${s.wins}</td>
+                  <td style="color:var(--red)">${s.losses}</td>
+                  <td style="color:var(--muted)">${s.draws}</td>
+                  <td><strong style="color:var(--gold)">${s.points}</strong></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Prize summary if set -->
+      ${(t.payouts||[]).length > 0 ? `
+        <div style="margin-top:24px">
+          <div class="section-title">Prize Payouts — Pool: $${(t.prizePool||0).toFixed(2)}</div>
+          ${t.payouts.map(p => `
+            <div class="flex-between" style="padding:8px 0;border-bottom:1px solid var(--border)">
+              <div><strong>${p.label}</strong>${p.playerId ? ` — ${(t.standings||[]).find(s=>s.playerId===p.playerId)?.name||p.playerId}` : ' — TBD'}</div>
+              <div class="flex gap-8">
+                <span style="color:var(--gold)">$${(p.amount||0).toFixed(2)}</span>
+                ${p.paid
+                  ? '<span class="badge badge-green">Paid</span>'
+                  : `<button class="btn btn-sm btn-success" onclick="markPrizePaid('${id}',${p.place})">Mark Paid</button>`}
+              </div>
+            </div>`).join('')}
+        </div>` : ''}
+    `;
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div>${e.message}</div></div>`;
+  }
+}
+
+function renderRoundMatches(matches, tid, round) {
+  if (!matches.length) return '<div class="text-muted">No matches for this round</div>';
+  return `
+    <div class="section-title">Round ${round} Matches ${matches.filter(m=>m.result==='pending').length > 0 ? `<span class="badge badge-red" style="margin-left:8px">${matches.filter(m=>m.result==='pending').length} pending</span>` : '<span class="badge badge-green" style="margin-left:8px">Complete</span>'}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:12px">
+      ${matches.map(m => `
+        <div class="card" style="padding:14px;border:1px solid ${m.result==='pending'?'var(--border)':'var(--green)'}">
+          <div style="font-size:0.75em;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Table ${m.table}</div>
+          <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
+            <button class="match-player-btn ${m.result==='p1win'?'winner':m.result==='p2win'?'loser':''}"
+              onclick="${m.result==='pending'?`recordResultDetail('${m._id}','p1win','${tid}')`:''}"
+              style="flex:1;${m.result!=='pending'?'cursor:default':''}">
+              ${m.p1Name}
+            </button>
+            <span style="color:var(--muted);font-size:0.8em;flex-shrink:0">vs</span>
+            <button class="match-player-btn ${m.result==='p2win'?'winner':m.result==='p1win'?'loser':''}${m.p2Id==='BYE'?' bye-btn':''}"
+              onclick="${m.p2Id!=='BYE'&&m.result==='pending'?`recordResultDetail('${m._id}','p2win','${tid}')`:''}"
+              style="flex:1;${m.result!=='pending'||m.p2Id==='BYE'?'cursor:default':''}">
+              ${m.p2Name}
+            </button>
+          </div>
+          ${m.result!=='pending' ? `<div style="text-align:center;font-size:0.75em;color:var(--green);margin-top:8px">
+            ✓ ${m.result==='p1win'?m.p1Name:m.result==='p2win'?m.p2Name:m.result==='bye'?'BYE':'Draw'}
+          </div>` : `
+          <div style="text-align:center;margin-top:8px">
+            <button class="btn btn-sm" style="background:var(--bg3);color:var(--muted);font-size:0.75em" onclick="recordResultDetail('${m._id}','draw','${tid}')">Draw</button>
+          </div>`}
+        </div>`).join('')}
+    </div>`;
+}
+
+async function showRound(tid, round, btn) {
+  document.querySelectorAll(`[onclick^="showRound('${tid}']`).forEach(b => {
+    b.classList.remove('btn-primary'); b.classList.add('btn-ghost'); b.style.opacity='0.6';
+  });
+  btn.classList.add('btn-primary'); btn.classList.remove('btn-ghost'); btn.style.opacity='1';
+
+  const t = await api.get(`/api/tournaments/${tid}`);
+  const matches = (t.matches||[]).filter(m => m.round === round);
+  document.getElementById(`round-matches-${tid}`).innerHTML = renderRoundMatches(matches, tid, round);
+}
+
+async function recordResultDetail(mid, result, tid) {
+  try {
+    await api.put(`/api/tournaments/matches/${mid}`, { result });
+    loadTournamentDetail(tid);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function nextRoundDetail(id) {
+  try {
+    await api.post(`/api/tournaments/${id}/round`);
+    toast('Next round started!');
+    loadTournamentDetail(id);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function finishTournamentDetail(id) {
+  const ok = await showConfirmDetail('Finish Tournament?', 'This will record final standings and award loyalty points. Cannot be undone.');
+  if (!ok) return;
+  try {
+    const r = await api.post(`/api/tournaments/${id}/finish`);
+    toast(`Complete! Winner: ${r.standings[0]?.name}`);
+    loadTournamentDetail(id);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function showConfirmDetail(title, msg) {
+  return new Promise(resolve => {
+    const div = document.createElement('div');
+    div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center';
+    div.innerHTML = `
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:24px;width:360px;text-align:center">
+        <h3 style="color:var(--gold);margin-bottom:12px">${title}</h3>
+        <p style="color:var(--muted);font-size:0.9em;margin-bottom:20px">${msg}</p>
+        <div style="display:flex;gap:10px;justify-content:center">
+          <button class="btn btn-ghost" onclick="this.closest('[style]').remove();__confirmResolve(false)">Cancel</button>
+          <button class="btn btn-success" onclick="this.closest('[style]').remove();__confirmResolve(true)">Confirm</button>
+        </div>
+      </div>`;
+    window.__confirmResolve = resolve;
+    document.body.appendChild(div);
+  });
+}
+
+// ── Prize Manager ──────────────────────────────────────────────────────────
+async function openPrizeManager(tid) {
+  const t = await api.get(`/api/tournaments/${tid}`);
+  const standings = t.standings || [];
+
+  openModal('💰 Prize Manager', `
+    <div style="margin-bottom:12px">
+      <label style="color:var(--muted);font-size:0.8em">Total Prize Pool ($)</label>
+      <input type="number" id="prize-pool" value="${t.prizePool||''}" placeholder="e.g. 50" min="0" step="0.01"
+        style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:8px;border-radius:6px;margin-top:4px">
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="color:var(--muted);font-size:0.8em">Payouts (one per line: Place,Label,Amount)</label>
+      <textarea id="prize-payouts" rows="5" placeholder="1,1st Place,20&#10;2,2nd Place,15&#10;3,3rd Place,10"
+        style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:8px;border-radius:6px;margin-top:4px;resize:vertical">${(t.payouts||[]).map(p=>`${p.place},${p.label},${p.amount}`).join('\n')}</textarea>
+      <div style="font-size:0.75em;color:var(--muted);margin-top:4px">Format: Place,Label,Amount — e.g. <code>1,1st Place,20</code></div>
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="color:var(--muted);font-size:0.8em">Assign winners (based on current standings)</label>
+      ${standings.slice(0,4).map((s,i) => `
+        <div style="padding:6px 0;font-size:0.85em;color:var(--muted)">
+          <span class="standings-rank ${i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other'}" style="margin-right:8px">${i+1}</span>
+          ${s.name}
+        </div>`).join('')}
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="savePrizes('${tid}','${standings.map(s=>s.playerId).join(',')}')">Save Prizes</button>
+    </div>
+  `);
+}
+
+async function savePrizes(tid, playerIdsCsv) {
+  const pool = parseFloat(document.getElementById('prize-pool').value) || 0;
+  const lines = document.getElementById('prize-payouts').value.trim().split('\n').filter(Boolean);
+  const playerIds = playerIdsCsv.split(',');
+
+  const payouts = lines.map(line => {
+    const parts = line.split(',');
+    const place = parseInt(parts[0]);
+    return {
+      place,
+      label:    parts[1]?.trim() || `Place ${place}`,
+      amount:   parseFloat(parts[2]) || 0,
+      playerId: playerIds[place-1] || null,
+      paid:     false,
+    };
+  });
+
+  try {
+    await api.post(`/api/tournaments/${tid}/prizes`, { prizePool: pool, payouts });
+    toast('Prizes saved');
+    closeModal();
+    loadTournamentDetail(tid);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function markPrizePaid(tid, place) {
+  try {
+    await api.put(`/api/tournaments/${tid}/prizes/${place}/paid`, {});
+    toast('Marked as paid');
+    loadTournamentDetail(tid);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// RANKINGS
+// ════════════════════════════════════════════════════════════════════════════
+async function loadRankings() {
+  const el = document.getElementById('page-rankings');
+  el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div>Loading rankings...</div></div>';
+
+  try {
+    const GAMES = ['All Games','Pokemon','Magic: The Gathering','One Piece','Yu-Gi-Oh','Warhammer'];
+    const gameFilter = el.dataset.gameFilter || '';
+
+    const url = '/api/tournaments/rankings/all' + (gameFilter ? `?game=${encodeURIComponent(gameFilter)}` : '');
+    const rankings = await api.get(url);
+
+    el.innerHTML = `
+      <div class="page-header">
+        <div>
+          <div class="page-title">Player Rankings</div>
+          <div class="page-sub">Cumulative standings across all completed tournaments</div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <select onchange="filterRankings(this.value)" style="background:var(--bg2);border:1px solid var(--border);color:var(--white);padding:8px 12px;border-radius:6px">
+          ${GAMES.map(g => `<option value="${g==='All Games'?'':g}" ${gameFilter===(g==='All Games'?'':g)?'selected':''}>${g}</option>`).join('')}
+        </select>
+        <span style="color:var(--muted);font-size:0.85em">${rankings.length} players ranked</span>
+      </div>
+
+      ${rankings.length === 0 ? `
+        <div class="empty-state">
+          <div class="empty-icon">🏆</div>
+          <div class="empty-title">No rankings yet</div>
+          <div class="empty-sub">Complete tournaments to build the leaderboard</div>
+        </div>` : `
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th style="width:50px">Rank</th>
+              <th>Player</th>
+              <th>Tournaments</th>
+              <th>W/L/D</th>
+              <th>Win Rate</th>
+              <th>1st Place</th>
+              <th>Top 3</th>
+              <th>Games</th>
+              <th style="color:var(--gold)">Points</th>
+            </tr></thead>
+            <tbody>
+              ${rankings.map((r,i) => `
+                <tr>
+                  <td><div class="standings-rank ${i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other'}">${i+1}</div></td>
+                  <td><strong>${r.name}</strong></td>
+                  <td style="color:var(--muted)">${r.tournaments}</td>
+                  <td><span style="color:var(--green)">${r.wins}</span>/<span style="color:var(--red)">${r.losses}</span>/<span style="color:var(--muted)">${r.draws}</span></td>
+                  <td>
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <div style="background:var(--bg3);border-radius:4px;height:6px;width:60px;overflow:hidden">
+                        <div style="background:var(--gold);height:100%;width:${r.winRate}%"></div>
+                      </div>
+                      <span style="font-size:0.8em;color:var(--muted)">${r.winRate}%</span>
+                    </div>
+                  </td>
+                  <td style="color:var(--gold)">${r.firstPlace > 0 ? '🥇'.repeat(Math.min(r.firstPlace,3)) + (r.firstPlace>3?` ×${r.firstPlace}`:'') : '—'}</td>
+                  <td style="color:var(--muted)">${r.topThree}</td>
+                  <td style="font-size:0.8em">${r.games.slice(0,2).map(g=>gameBadge(g)).join('')}${r.games.length>2?`<span style="color:var(--muted)"> +${r.games.length-2}</span>`:''}</td>
+                  <td><strong style="color:var(--gold);font-size:1.1em">${r.rankingPoints}</strong></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:12px;font-size:0.78em;color:var(--muted)">
+          Ranking points: 1st=10pts · 2nd=7pts · 3rd=5pts · 4th=3pts · Participated=1pt
+        </div>`}
+    `;
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div>${e.message}</div></div>`;
+  }
+}
+
+function filterRankings(game) {
+  const el = document.getElementById('page-rankings');
+  el.dataset.gameFilter = game;
+  loadRankings();
+}

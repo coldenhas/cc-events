@@ -219,3 +219,92 @@ router.post('/:id/finish', async (req, res) => {
 });
 
 module.exports = router;
+// POST /api/tournaments/:id/prizes — set prize structure
+router.post('/:id/prizes', async (req, res) => {
+  try {
+    const { prizePool, payouts, notes } = req.body;
+    // payouts: [{ place: 1, label: '1st Place', amount: 20, playerId: null, paid: false }, ...]
+    await db.tournaments.update(
+      { _id: req.params.id },
+      { $set: { prizePool: parseFloat(prizePool)||0, payouts: payouts||[], prizeNotes: notes||'' } }
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/tournaments/:id/prizes/:place/paid — mark a payout as paid
+router.put('/:id/prizes/:place/paid', async (req, res) => {
+  try {
+    const t = await db.tournaments.findOne({ _id: req.params.id });
+    if (!t) return res.status(404).json({ error: 'Not found' });
+    const payouts = (t.payouts||[]).map(p =>
+      p.place === parseInt(req.params.place) ? { ...p, paid: true, paidAt: new Date() } : p
+    );
+    await db.tournaments.update({ _id: req.params.id }, { $set: { payouts } });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/tournaments/rankings — cross-tournament player rankings
+router.get('/rankings/all', async (req, res) => {
+  try {
+    const { game } = req.query;
+    const query = { status: 'complete' };
+    if (game) query.game = game;
+    const tournaments = await db.tournaments.sort(query, { date: -1 });
+    
+    const playerStats = {};
+    
+    for (const t of tournaments) {
+      const standings = t.finalStandings || [];
+      const total = standings.length;
+      
+      standings.forEach((s, idx) => {
+        const pid = s.playerId;
+        const name = s.name;
+        if (!pid || pid === 'BYE') return;
+        
+        if (!playerStats[pid]) {
+          playerStats[pid] = {
+            playerId: pid,
+            name,
+            tournaments: 0,
+            wins: 0,
+            losses: 0,
+            draws: 0,
+            firstPlace: 0,
+            topThree: 0,
+            rankingPoints: 0,
+            games: new Set(),
+          };
+        }
+        
+        const ps = playerStats[pid];
+        ps.tournaments++;
+        ps.wins    += s.wins    || 0;
+        ps.losses  += s.losses  || 0;
+        ps.draws   += s.draws   || 0;
+        ps.games.add(t.game);
+        
+        // Ranking points: 1st=10, 2nd=7, 3rd=5, 4th=3, rest=1
+        const place = idx + 1;
+        const rp = place === 1 ? 10 : place === 2 ? 7 : place === 3 ? 5 : place === 4 ? 3 : 1;
+        ps.rankingPoints += rp;
+        if (place === 1) ps.firstPlace++;
+        if (place <= 3)  ps.topThree++;
+      });
+    }
+    
+    const rankings = Object.values(playerStats)
+      .map(p => ({
+        ...p,
+        games: Array.from(p.games),
+        winRate: p.wins + p.losses + p.draws > 0
+          ? Math.round((p.wins / (p.wins + p.losses + p.draws)) * 100)
+          : 0,
+      }))
+      .sort((a, b) => b.rankingPoints - a.rankingPoints || b.wins - a.wins);
+    
+    res.json(rankings);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
