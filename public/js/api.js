@@ -34,12 +34,12 @@ async function doLogout() {
 
 function showLoginScreen() {
   document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('app-shell').style.display = 'none';
+  document.getElementById('app').style.display = 'none';
 }
 
 function showAppShell() {
   document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app-shell').style.display = 'block';
+  document.getElementById('app').style.display = 'flex';
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────

@@ -629,8 +629,4 @@ document.querySelectorAll('.nav-link').forEach(link => {
 function initApp() {
   navigate('dashboard');
 }
-
-// Only auto-init if already showing app shell (auth handled in index.html)
-if (document.getElementById('app-shell') && document.getElementById('app-shell').style.display !== 'none') {
-  initApp();
-}
+// initApp() is called by index.html after auth check — do not call here
