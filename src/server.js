@@ -1,6 +1,7 @@
 const express = require('express');
 const path    = require('path');
 const session = require('express-session');
+const crypto  = require('crypto');
 const app     = express();
 
 const PORT = process.env.PORT || 8080;
@@ -8,13 +9,12 @@ const PORT = process.env.PORT || 8080;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'cc-events-v2',
+  secret: process.env.SESSION_SECRET || 'cc-events-v2-' + crypto.randomBytes(8).toString('hex'),
   resave: false,
-  saveUninitialized: true,
-  cookie: { secure: false }
+  saveUninitialized: false,
+  cookie: { secure: false, maxAge: 1000 * 60 * 60 * 24 } // 24 hours
 }));
 
-// CORS — allow all origins (internal staff tool, no sensitive user data)
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
@@ -26,12 +26,37 @@ app.use((req, res, next) => {
 const publicPath = path.join(__dirname, '..', 'public');
 app.use(express.static(publicPath));
 
-app.use('/api/players',     require('../routes/players'));
-app.use('/api/tournaments', require('../routes/tournaments'));
-app.use('/api/events',      require('../routes/events'));
-app.use('/api/loyalty',     require('../routes/loyalty_search'));
+// ── Auth endpoints (public) ───────────────────────────────────────────────────
+app.post('/api/login', (req, res) => {
+  const { password } = req.body;
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!adminPassword) return res.status(500).json({ error: 'ADMIN_PASSWORD not configured' });
+  if (password !== adminPassword) return res.status(401).json({ error: 'Invalid password' });
+  req.session.authenticated = true;
+  res.json({ ok: true });
+});
 
-app.get('/api/dashboard', async (req, res) => {
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+app.get('/api/auth-check', (req, res) => {
+  res.json({ authenticated: !!req.session.authenticated });
+});
+
+// ── Auth middleware ───────────────────────────────────────────────────────────
+const requireAuth = (req, res, next) => {
+  if (req.session.authenticated) return next();
+  res.status(401).json({ error: 'Unauthorized' });
+};
+
+// ── Protected routes ──────────────────────────────────────────────────────────
+app.use('/api/players',     requireAuth, require('../routes/players'));
+app.use('/api/tournaments', requireAuth, require('../routes/tournaments'));
+app.use('/api/events',      requireAuth, require('../routes/events'));
+app.use('/api/loyalty',     requireAuth, require('../routes/loyalty_search'));
+
+app.get('/api/dashboard', requireAuth, async (req, res) => {
   try {
     const { db } = require('./database');
     const now   = new Date();

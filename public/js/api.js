@@ -1,18 +1,78 @@
 // ── Base URL ──────────────────────────────────────────────────────────────────
-// When served through Shopify app proxy, API calls must go directly to Railway.
-// When accessed directly at railway URL, relative paths work fine.
 const CC_EVENTS_BASE = (() => {
   const host = window.location.hostname;
   if (host.includes('railway.app')) return '';
   return 'https://cc-events-production.up.railway.app';
 })();
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
+async function checkAuth() {
+  try {
+    const r = await fetch(CC_EVENTS_BASE + '/api/auth-check');
+    const d = await r.json();
+    return d.authenticated;
+  } catch { return false; }
+}
+
+async function doLogin(password) {
+  const r = await fetch(CC_EVENTS_BASE + '/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  if (!r.ok) {
+    const d = await r.json();
+    throw new Error(d.error || 'Invalid password');
+  }
+  return true;
+}
+
+async function doLogout() {
+  await fetch(CC_EVENTS_BASE + '/api/logout', { method: 'POST' });
+  showLoginScreen();
+}
+
+function showLoginScreen() {
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app-shell').style.display = 'none';
+}
+
+function showAppShell() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = 'block';
+}
+
 // ── API ───────────────────────────────────────────────────────────────────────
+function handle401() {
+  showLoginScreen();
+  throw new Error('Session expired. Please log in again.');
+}
+
 const api = {
-  get:    async url      => { const r=await fetch(CC_EVENTS_BASE+url);             if(!r.ok) throw new Error((await r.json()).error||r.statusText); return r.json(); },
-  post:   async (url,d)  => { const r=await fetch(CC_EVENTS_BASE+url,{method:'POST',  headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); if(!r.ok) throw new Error((await r.json()).error||r.statusText); return r.json(); },
-  put:    async (url,d)  => { const r=await fetch(CC_EVENTS_BASE+url,{method:'PUT',   headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); if(!r.ok) throw new Error((await r.json()).error||r.statusText); return r.json(); },
-  delete: async url      => { const r=await fetch(CC_EVENTS_BASE+url,{method:'DELETE'});                                                                    if(!r.ok) throw new Error((await r.json()).error||r.statusText); return r.json(); },
+  get: async url => {
+    const r = await fetch(CC_EVENTS_BASE + url);
+    if (r.status === 401) return handle401();
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    return r.json();
+  },
+  post: async (url, d) => {
+    const r = await fetch(CC_EVENTS_BASE + url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) });
+    if (r.status === 401) return handle401();
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    return r.json();
+  },
+  put: async (url, d) => {
+    const r = await fetch(CC_EVENTS_BASE + url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) });
+    if (r.status === 401) return handle401();
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    return r.json();
+  },
+  delete: async url => {
+    const r = await fetch(CC_EVENTS_BASE + url, { method: 'DELETE' });
+    if (r.status === 401) return handle401();
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    return r.json();
+  },
 };
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -34,8 +94,9 @@ function closeModal() {
   document.getElementById('modal-overlay').classList.add('hidden');
   document.getElementById('modal-body').innerHTML = '';
 }
-document.getElementById('modal-overlay').addEventListener('click', e => {
-  if (e.target === document.getElementById('modal-overlay')) closeModal();
+document.addEventListener('DOMContentLoaded', () => {
+  const overlay = document.getElementById('modal-overlay');
+  if (overlay) overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

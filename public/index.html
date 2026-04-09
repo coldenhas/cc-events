@@ -12,6 +12,24 @@
 <link rel="stylesheet" href="https://cc-events-production.up.railway.app/css/app.css">
 </head>
 <body>
+<!-- Login Screen -->
+<div id="login-screen" style="display:none;position:fixed;inset:0;background:#0d0d0d;z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#111;border:1px solid #333;border-radius:10px;padding:36px 32px;width:340px;text-align:center;">
+    <div style="font-size:2rem;margin-bottom:8px;">🎮</div>
+    <h2 style="color:#ffc400;margin-bottom:6px;font-size:1.3rem;">CC Events Manager</h2>
+    <p style="color:#666;font-size:0.85rem;margin-bottom:24px;">Cluttered Collectibles &amp; Comics</p>
+    <input type="password" id="login-password" placeholder="Admin password"
+      style="width:100%;background:#0d0d0d;border:1px solid #333;border-radius:6px;color:#f0f0f0;padding:10px 12px;font-size:0.9rem;margin-bottom:12px;box-sizing:border-box;"
+      onkeydown="if(event.key==='Enter') submitLogin()">
+    <button onclick="submitLogin()"
+      style="width:100%;background:#ffc400;color:#000;border:none;border-radius:6px;padding:10px;font-weight:700;font-size:0.95rem;cursor:pointer;">
+      Sign In
+    </button>
+    <div id="login-error" style="color:#c82323;font-size:0.82rem;margin-top:8px;"></div>
+  </div>
+</div>
+
+<div id="app-shell" style="display:none;height:100vh;">
 <div id="app">
   <nav id="sidebar">
     <div class="sidebar-header">
@@ -38,6 +56,7 @@
     <div id="page-events"      class="page"></div>
   </main>
 </div>
+</div><!-- end app-shell -->
 <div id="modal-overlay" class="hidden">
   <div id="modal-box">
     <div id="modal-header">
@@ -50,5 +69,32 @@
 <div id="toast-container"></div>
 <script src="https://cc-events-production.up.railway.app/js/api.js"></script>
 <script src="https://cc-events-production.up.railway.app/js/app.js"></script>
+<script>
+async function submitLogin() {
+  const pw = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  try {
+    await doLogin(pw);
+    showAppShell();
+    if (typeof initApp === 'function') initApp();
+  } catch(e) {
+    errEl.textContent = e.message || 'Invalid password';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  // Show login by default immediately
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app-shell').style.display = 'none';
+
+  // Then check if already authenticated
+  const authed = await checkAuth();
+  if (authed) {
+    showAppShell();
+    if (typeof initApp === 'function') initApp();
+  }
+});
+</script>
 </body>
 </html>

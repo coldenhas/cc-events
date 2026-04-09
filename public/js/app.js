@@ -626,4 +626,11 @@ document.querySelectorAll('.nav-link').forEach(link => {
   link.addEventListener('click', e => { e.preventDefault(); navigate(link.dataset.page); });
 });
 
-navigate('dashboard');
+function initApp() {
+  navigate('dashboard');
+}
+
+// Only auto-init if already showing app shell (auth handled in index.html)
+if (document.getElementById('app-shell') && document.getElementById('app-shell').style.display !== 'none') {
+  initApp();
+}
