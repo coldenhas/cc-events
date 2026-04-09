@@ -13,7 +13,7 @@
 </head>
 <body>
 <!-- Login Screen -->
-<div id="login-screen" style="display:none;position:fixed;inset:0;background:#0d0d0d;z-index:9999;align-items:center;justify-content:center;">
+<div id="login-screen" style="display:flex;position:fixed;inset:0;background:#0d0d0d;z-index:9999;align-items:center;justify-content:center;">
   <div style="background:#111;border:1px solid #333;border-radius:10px;padding:36px 32px;width:340px;text-align:center;">
     <div style="font-size:2rem;margin-bottom:8px;">🎮</div>
     <h2 style="color:#ffc400;margin-bottom:6px;font-size:1.3rem;">CC Events Manager</h2>
@@ -85,16 +85,14 @@ async function submitLogin() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Show login by default immediately
-  document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('app-shell').style.display = 'none';
-
-  // Then check if already authenticated
+  // Check if already authenticated — if so skip login
   const authed = await checkAuth();
   if (authed) {
-    showAppShell();
-    if (typeof initApp === 'function') initApp();
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    navigate('dashboard');
   }
+  // Otherwise login screen is already visible (display:flex by default)
 });
 </script>
 </body>
