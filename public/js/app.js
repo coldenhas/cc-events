@@ -8,7 +8,7 @@ async function loadDashboard() {
     const next = d.nextEvent;
     el.innerHTML = `
       <div class="page-header">
-        <div><div class="page-title">Dashboard</div><div class="page-sub">Cluttered Collectibles & Comics LLC — Ignacio & Bayfield, CO</div></div>
+        <div><div class="page-title">Dashboard</div><div class="page-sub">Cluttered Collectibles & Comics LLC — Ignacio, CO / Southern Ute Region</div></div>
         <div class="flex gap-8">
           <button class="btn btn-primary" onclick="navigate('players');setTimeout(openAddPlayer,80)">+ Player</button>
           <button class="btn btn-ghost"   onclick="navigate('events');setTimeout(openAddEvent,80)">+ Event</button>
