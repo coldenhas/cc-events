@@ -709,12 +709,17 @@ async function loadTournamentDetail(id) {
           <div class="section-title">Prize Payouts — Pool: $${(t.prizePool||0).toFixed(2)}</div>
           ${t.payouts.map(p => `
             <div class="flex-between" style="padding:8px 0;border-bottom:1px solid var(--border)">
-              <div><strong>${p.label}</strong>${p.playerId ? ` — ${(t.standings||[]).find(s=>s.playerId===p.playerId)?.name||p.playerId}` : ' — TBD'}</div>
-              <div class="flex gap-8">
-                <span style="color:var(--gold)">$${(p.amount||0).toFixed(2)}</span>
+              <div>
+                <strong>${p.label}</strong>
+                ${p.type==='goods'?'🎁':p.type==='both'?'💵🎁':'💵'}
+                ${p.playerId ? ` — ${(t.standings||[]).find(s=>s.playerId===p.playerId)?.name||''}` : ' — TBD'}
+                ${p.description ? `<div style="font-size:0.8em;color:var(--muted);margin-top:2px">${p.description}</div>` : ''}
+              </div>
+              <div class="flex gap-8" style="align-items:center">
+                ${p.amount > 0 ? `<span style="color:var(--gold)">$${(p.amount||0).toFixed(2)}</span>` : ''}
                 ${p.paid
-                  ? '<span class="badge badge-green">Paid</span>'
-                  : `<button class="btn btn-sm btn-success" onclick="markPrizePaid('${id}',${p.place})">Mark Paid</button>`}
+                  ? '<span class="badge badge-green">Paid/Given</span>'
+                  : `<button class="btn btn-sm btn-success" onclick="markPrizePaid('${id}',${p.place})">Mark Given</button>`}
               </div>
             </div>`).join('')}
         </div>` : ''}
@@ -813,27 +818,79 @@ function showConfirmDetail(title, msg) {
 async function openPrizeManager(tid) {
   const t = await api.get(`/api/tournaments/${tid}`);
   const standings = t.standings || [];
+  const existing = t.payouts || [];
 
-  openModal('💰 Prize Manager', `
+  // Build default rows from existing or blank
+  const rows = existing.length > 0 ? existing : [
+    { place:1, label:'1st Place', type:'cash', amount:'', description:'' },
+    { place:2, label:'2nd Place', type:'cash', amount:'', description:'' },
+    { place:3, label:'3rd Place', type:'goods', amount:'', description:'' },
+  ];
+
+  function prizeRow(r, idx) {
+    return `<tr id="prize-row-${idx}">
+      <td style="padding:4px 6px"><input type="number" value="${r.place}" min="1"
+        style="width:50px;background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:6px;border-radius:4px"
+        onchange="updatePrizeRow(${idx},'place',this.value)"></td>
+      <td style="padding:4px 6px"><input type="text" value="${r.label||''}" placeholder="1st Place"
+        style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:6px;border-radius:4px"
+        onchange="updatePrizeRow(${idx},'label',this.value)"></td>
+      <td style="padding:4px 6px">
+        <select onchange="updatePrizeRow(${idx},'type',this.value)"
+          style="background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:6px;border-radius:4px">
+          <option value="cash" ${(r.type||'cash')==='cash'?'selected':''}>💵 Cash</option>
+          <option value="goods" ${r.type==='goods'?'selected':''}>🎁 Goods</option>
+          <option value="both" ${r.type==='both'?'selected':''}>💵+🎁 Both</option>
+        </select>
+      </td>
+      <td style="padding:4px 6px"><input type="number" value="${r.amount||''}" placeholder="0.00" min="0" step="0.01"
+        style="width:80px;background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:6px;border-radius:4px"
+        onchange="updatePrizeRow(${idx},'amount',this.value)"
+        title="Cash value (leave 0 for goods-only)"></td>
+      <td style="padding:4px 6px"><input type="text" value="${r.description||''}" placeholder="e.g. Booster box, promo card"
+        style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:6px;border-radius:4px"
+        onchange="updatePrizeRow(${idx},'description',this.value)"></td>
+      <td style="padding:4px 6px"><button class="btn btn-sm btn-danger" onclick="removePrizeRow(${idx})">✕</button></td>
+    </tr>`;
+  }
+
+  window._prizeRows = rows.map(r => ({...r}));
+
+  openModal('🏆 Prize Manager', `
     <div style="margin-bottom:12px">
-      <label style="color:var(--muted);font-size:0.8em">Total Prize Pool ($)</label>
+      <label style="color:var(--muted);font-size:0.8em">Total Prize Pool (cash value, $)</label>
       <input type="number" id="prize-pool" value="${t.prizePool||''}" placeholder="e.g. 50" min="0" step="0.01"
         style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:8px;border-radius:6px;margin-top:4px">
     </div>
-    <div style="margin-bottom:12px">
-      <label style="color:var(--muted);font-size:0.8em">Payouts (one per line: Place,Label,Amount)</label>
-      <textarea id="prize-payouts" rows="5" placeholder="1,1st Place,20&#10;2,2nd Place,15&#10;3,3rd Place,10"
-        style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:8px;border-radius:6px;margin-top:4px;resize:vertical">${(t.payouts||[]).map(p=>`${p.place},${p.label},${p.amount}`).join('\n')}</textarea>
-      <div style="font-size:0.75em;color:var(--muted);margin-top:4px">Format: Place,Label,Amount — e.g. <code>1,1st Place,20</code></div>
+
+    <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+      <label style="color:var(--muted);font-size:0.8em">Prize Payouts</label>
+      <button class="btn btn-sm btn-ghost" onclick="addPrizeRow()">+ Add Row</button>
     </div>
-    <div style="margin-bottom:16px">
-      <label style="color:var(--muted);font-size:0.8em">Assign winners (based on current standings)</label>
-      ${standings.slice(0,4).map((s,i) => `
-        <div style="padding:6px 0;font-size:0.85em;color:var(--muted)">
-          <span class="standings-rank ${i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other'}" style="margin-right:8px">${i+1}</span>
-          ${s.name}
-        </div>`).join('')}
+    <div style="overflow-x:auto;margin-bottom:12px">
+      <table style="width:100%;font-size:0.82em;border-collapse:collapse">
+        <thead><tr style="color:var(--muted)">
+          <th style="padding:4px 6px;text-align:left">Place</th>
+          <th style="padding:4px 6px;text-align:left">Label</th>
+          <th style="padding:4px 6px;text-align:left">Type</th>
+          <th style="padding:4px 6px;text-align:left">Cash ($)</th>
+          <th style="padding:4px 6px;text-align:left">Goods Description</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="prize-rows-body">
+          ${rows.map((r,i) => prizeRow(r,i)).join('')}
+        </tbody>
+      </table>
     </div>
+
+    ${standings.length > 0 ? `
+      <div style="margin-bottom:16px;font-size:0.82em;color:var(--muted)">
+        <strong style="color:var(--white)">Current standings:</strong>
+        ${standings.slice(0,5).map((s,i) =>
+          `<span style="margin-left:8px"><span class="standings-rank ${i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-other'}" style="display:inline-block;width:18px;height:18px;font-size:10px">${i+1}</span> ${s.name}</span>`
+        ).join('')}
+      </div>` : ''}
+
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="savePrizes('${tid}','${standings.map(s=>s.playerId).join(',')}')">Save Prizes</button>
@@ -841,22 +898,68 @@ async function openPrizeManager(tid) {
   `);
 }
 
+function updatePrizeRow(idx, field, value) {
+  if (window._prizeRows && window._prizeRows[idx]) {
+    window._prizeRows[idx][field] = value;
+  }
+}
+
+function removePrizeRow(idx) {
+  if (!window._prizeRows) return;
+  window._prizeRows.splice(idx, 1);
+  // Re-render rows
+  const tbody = document.getElementById('prize-rows-body');
+  if (tbody) tbody.innerHTML = window._prizeRows.map((r,i) => prizeRowHTML(r,i)).join('');
+}
+
+function addPrizeRow() {
+  if (!window._prizeRows) window._prizeRows = [];
+  const nextPlace = (window._prizeRows.length > 0 ? Math.max(...window._prizeRows.map(r=>parseInt(r.place)||0)) : 0) + 1;
+  window._prizeRows.push({ place: nextPlace, label: `${nextPlace}${nextPlace===1?'st':nextPlace===2?'nd':nextPlace===3?'rd':'th'} Place`, type:'cash', amount:'', description:'' });
+  const tbody = document.getElementById('prize-rows-body');
+  if (tbody) tbody.innerHTML = window._prizeRows.map((r,i) => prizeRowHTML(r,i)).join('');
+}
+
+function prizeRowHTML(r, idx) {
+  return `<tr id="prize-row-${idx}">
+    <td style="padding:4px 6px"><input type="number" value="${r.place}" min="1"
+      style="width:50px;background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:6px;border-radius:4px"
+      onchange="updatePrizeRow(${idx},'place',this.value)"></td>
+    <td style="padding:4px 6px"><input type="text" value="${r.label||''}" placeholder="1st Place"
+      style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:6px;border-radius:4px"
+      onchange="updatePrizeRow(${idx},'label',this.value)"></td>
+    <td style="padding:4px 6px">
+      <select onchange="updatePrizeRow(${idx},'type',this.value)"
+        style="background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:6px;border-radius:4px">
+        <option value="cash" ${(r.type||'cash')==='cash'?'selected':''}>💵 Cash</option>
+        <option value="goods" ${r.type==='goods'?'selected':''}>🎁 Goods</option>
+        <option value="both" ${r.type==='both'?'selected':''}>💵+🎁 Both</option>
+      </select>
+    </td>
+    <td style="padding:4px 6px"><input type="number" value="${r.amount||''}" placeholder="0.00" min="0" step="0.01"
+      style="width:80px;background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:6px;border-radius:4px"
+      onchange="updatePrizeRow(${idx},'amount',this.value)"></td>
+    <td style="padding:4px 6px"><input type="text" value="${r.description||''}" placeholder="e.g. Booster box, promo card"
+      style="width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--white);padding:6px;border-radius:4px"
+      onchange="updatePrizeRow(${idx},'description',this.value)"></td>
+    <td style="padding:4px 6px"><button class="btn btn-sm btn-danger" onclick="removePrizeRow(${idx})">✕</button></td>
+  </tr>`;
+}
+
 async function savePrizes(tid, playerIdsCsv) {
   const pool = parseFloat(document.getElementById('prize-pool').value) || 0;
-  const lines = document.getElementById('prize-payouts').value.trim().split('\n').filter(Boolean);
   const playerIds = playerIdsCsv.split(',');
+  const rows = window._prizeRows || [];
 
-  const payouts = lines.map(line => {
-    const parts = line.split(',');
-    const place = parseInt(parts[0]);
-    return {
-      place,
-      label:    parts[1]?.trim() || `Place ${place}`,
-      amount:   parseFloat(parts[2]) || 0,
-      playerId: playerIds[place-1] || null,
-      paid:     false,
-    };
-  });
+  const payouts = rows.map(r => ({
+    place:       parseInt(r.place) || 1,
+    label:       r.label || `Place ${r.place}`,
+    type:        r.type || 'cash',
+    amount:      parseFloat(r.amount) || 0,
+    description: r.description || '',
+    playerId:    playerIds[(parseInt(r.place)||1) - 1] || null,
+    paid:        false,
+  })).sort((a,b) => a.place - b.place);
 
   try {
     await api.post(`/api/tournaments/${tid}/prizes`, { prizePool: pool, payouts });
