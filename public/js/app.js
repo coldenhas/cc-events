@@ -303,7 +303,7 @@ async function openTournamentManager(id) {
     ${t.status==='registration' ? `
       <div class="section-title">Register Players</div>
       <div class="input-group mb-8">
-        <input type="text" id="ts-search" placeholder="Search player to add..." oninput="searchForTourney('${id}',this.value)">
+        <input type="text" id="ts-search" placeholder="Search player to add..." oninput="debounce(()=>searchForTourney('${id}',this.value),250)()" autocomplete="off">
         <button class="btn btn-primary" onclick="searchForTourney('${id}',document.getElementById('ts-search').value)">Search</button>
       </div>
       <div id="ts-results" class="mb-16"></div>
@@ -383,10 +383,14 @@ async function searchForTourney(id, search) {
 async function loadTourneyLoyalty(players) {
   for (const p of players) {
     if (!p.email) continue;
+    // Don't run if user is typing in the search box
+    if (document.activeElement && document.activeElement.id === 'ts-search') continue;
     const el = document.getElementById(`loy-${p.playerId}`);
     if (!el) continue;
     try {
       const loy = await api.get(`/api/players/${p.playerId}/loyalty`).catch(() => ({ found: false }));
+      // Re-check focus after async call returns
+      if (document.activeElement && document.activeElement.id === 'ts-search') continue;
       if (loy.found) {
         el.innerHTML = `${loy.tier?.icon||''} <strong style="color:#f5c518">${loy.balance?.toLocaleString()} pts</strong> · ${loy.tier?.name||''}`;
       } else {
