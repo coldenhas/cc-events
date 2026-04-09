@@ -75,7 +75,8 @@ async function renderPlayersResults(search='', gameFilter='') {
   if (!resultsEl) return;
   try {
     const players = await api.get('/api/players?' + params);
-    document.querySelector('.page-sub') && (document.querySelector('.page-sub').textContent = players.length + ' in database');
+    const sub = document.querySelector('.page-sub');
+    if (sub) sub.textContent = players.length + ' in database';
     resultsEl.innerHTML = players.length === 0
       ? `<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">No players found</div><div class="empty-sub">Add your first player to get started</div></div>`
       : `<div class="table-wrap"><table>
@@ -104,7 +105,6 @@ async function renderPlayersResults(search='', gameFilter='') {
 async function loadPlayers(search='', gameFilter='') {
   const el = document.getElementById('page-players');
 
-  // Only render the shell if it hasn't been rendered yet
   if (!document.getElementById('pl-search')) {
     el.innerHTML = `
       <div class="page-header">
@@ -112,28 +112,42 @@ async function loadPlayers(search='', gameFilter='') {
         <button class="btn btn-primary" onclick="openAddPlayer()">+ Add Player</button>
       </div>
       <div class="search-bar">
-        <input type="text" id="pl-search" placeholder="Search name, email, phone..." autocomplete="off">
+        <input type="text" id="pl-search" placeholder="Search by name, email, or phone..." autocomplete="off">
         <select id="pl-game">
           <option value="">All Games</option>
           ${GAMES.map(g=>`<option value="${g}">${g}</option>`).join('')}
         </select>
+        <button class="btn btn-primary" id="pl-search-btn">Search</button>
+        <button class="btn btn-ghost" id="pl-clear-btn">Clear</button>
       </div>
       <div id="pl-results"></div>`;
 
-    // Attach event listeners once
-    let _plTimer = null;
     const input  = document.getElementById('pl-search');
     const select = document.getElementById('pl-game');
-    input.addEventListener('input', () => {
-      clearTimeout(_plTimer);
-      _plTimer = setTimeout(() => renderPlayersResults(input.value, select.value), 300);
+    const btn    = document.getElementById('pl-search-btn');
+    const clear  = document.getElementById('pl-clear-btn');
+
+    // Search on button click
+    btn.addEventListener('click', () => renderPlayersResults(input.value, select.value));
+
+    // Search on Enter key
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') renderPlayersResults(input.value, select.value);
     });
+
+    // Clear resets and reloads all
+    clear.addEventListener('click', () => {
+      input.value = '';
+      select.value = '';
+      renderPlayersResults('', '');
+    });
+
+    // Game filter applies immediately on change
     select.addEventListener('change', () => renderPlayersResults(input.value, select.value));
   }
 
-  // Set values if called with args (e.g. after save/delete)
-  if (search    && document.getElementById('pl-search')) document.getElementById('pl-search').value = search;
-  if (gameFilter && document.getElementById('pl-game'))  document.getElementById('pl-game').value   = gameFilter;
+  if (search     && document.getElementById('pl-search')) document.getElementById('pl-search').value = search;
+  if (gameFilter && document.getElementById('pl-game'))   document.getElementById('pl-game').value   = gameFilter;
 
   await renderPlayersResults(search, gameFilter);
 }
@@ -380,16 +394,14 @@ async function openTournamentManager(id) {
     setTimeout(() => loadTourneyLoyalty(t.players), 80);
   }
 
-  // Attach search input listener after modal renders — avoids inline handler issues
+  // Attach search input listener after modal renders
   if (t.status === 'registration') {
     setTimeout(() => {
       const input = document.getElementById('ts-search');
       const btn   = document.getElementById('ts-search-btn');
       if (!input) return;
-      let _timer = null;
-      input.addEventListener('input', () => {
-        clearTimeout(_timer);
-        _timer = setTimeout(() => searchForTourney(id, input.value), 300);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') searchForTourney(id, input.value);
       });
       if (btn) btn.addEventListener('click', () => searchForTourney(id, input.value));
       input.focus();
