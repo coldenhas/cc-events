@@ -29,6 +29,10 @@ async function doLogin(password) {
 
 async function doLogout() {
   await fetch(CC_EVENTS_BASE + '/api/logout', { method: 'POST' });
+  const pw = document.getElementById('login-password');
+  if (pw) { pw.value = ''; pw.focus(); }
+  const err = document.getElementById('login-error');
+  if (err) err.textContent = '';
   showLoginScreen();
 }
 
