@@ -67,29 +67,18 @@ async function loadDashboard() {
 // ════════════════════════════════════════════════════════════════════════════
 // PLAYERS
 // ════════════════════════════════════════════════════════════════════════════
-async function loadPlayers(search='', gameFilter='') {
-  const el = document.getElementById('page-players');
+async function renderPlayersResults(search='', gameFilter='') {
   const params = new URLSearchParams();
   if (search)     params.set('search', search);
   if (gameFilter) params.set('game', gameFilter);
+  const resultsEl = document.getElementById('pl-results');
+  if (!resultsEl) return;
   try {
     const players = await api.get('/api/players?' + params);
-    el.innerHTML = `
-      <div class="page-header">
-        <div><div class="page-title">Players</div><div class="page-sub">${players.length} in database</div></div>
-        <button class="btn btn-primary" onclick="openAddPlayer()">+ Add Player</button>
-      </div>
-      <div class="search-bar">
-        <input type="text" id="pl-search" placeholder="Search name, email, phone..." value="${search}"
-          onkeyup="debounce(()=>loadPlayers(this.value,document.getElementById('pl-game').value),300)()">
-        <select id="pl-game" onchange="loadPlayers(document.getElementById('pl-search').value,this.value)">
-          <option value="">All Games</option>
-          ${GAMES.map(g=>`<option value="${g}" ${gameFilter===g?'selected':''}>${g}</option>`).join('')}
-        </select>
-      </div>
-      ${players.length === 0 ? `<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">No players found</div><div class="empty-sub">Add your first player to get started</div></div>` : `
-      <div class="table-wrap">
-        <table>
+    document.querySelector('.page-sub') && (document.querySelector('.page-sub').textContent = players.length + ' in database');
+    resultsEl.innerHTML = players.length === 0
+      ? `<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">No players found</div><div class="empty-sub">Add your first player to get started</div></div>`
+      : `<div class="table-wrap"><table>
           <thead><tr><th>Player</th><th>Games</th><th>City</th><th>Phone</th><th>Events</th><th>Joined</th><th></th></tr></thead>
           <tbody>${players.map(p=>`
             <tr>
@@ -108,10 +97,45 @@ async function loadPlayers(search='', gameFilter='') {
                 <button class="btn btn-sm btn-danger btn-icon" onclick="deletePlayer('${p._id}','${p.name}')" title="Delete">🗑</button>
               </div></td>
             </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>`}`;
-  } catch(e) { el.innerHTML = `<div class="empty-state"><div>${e.message}</div></div>`; }
+          </tbody></table></div>`;
+  } catch(e) { resultsEl.innerHTML = `<div class="empty-state"><div>${e.message}</div></div>`; }
+}
+
+async function loadPlayers(search='', gameFilter='') {
+  const el = document.getElementById('page-players');
+
+  // Only render the shell if it hasn't been rendered yet
+  if (!document.getElementById('pl-search')) {
+    el.innerHTML = `
+      <div class="page-header">
+        <div><div class="page-title">Players</div><div class="page-sub">Loading...</div></div>
+        <button class="btn btn-primary" onclick="openAddPlayer()">+ Add Player</button>
+      </div>
+      <div class="search-bar">
+        <input type="text" id="pl-search" placeholder="Search name, email, phone..." autocomplete="off">
+        <select id="pl-game">
+          <option value="">All Games</option>
+          ${GAMES.map(g=>`<option value="${g}">${g}</option>`).join('')}
+        </select>
+      </div>
+      <div id="pl-results"></div>`;
+
+    // Attach event listeners once
+    let _plTimer = null;
+    const input  = document.getElementById('pl-search');
+    const select = document.getElementById('pl-game');
+    input.addEventListener('input', () => {
+      clearTimeout(_plTimer);
+      _plTimer = setTimeout(() => renderPlayersResults(input.value, select.value), 300);
+    });
+    select.addEventListener('change', () => renderPlayersResults(input.value, select.value));
+  }
+
+  // Set values if called with args (e.g. after save/delete)
+  if (search    && document.getElementById('pl-search')) document.getElementById('pl-search').value = search;
+  if (gameFilter && document.getElementById('pl-game'))  document.getElementById('pl-game').value   = gameFilter;
+
+  await renderPlayersResults(search, gameFilter);
 }
 
 function playerForm(p={}) {
