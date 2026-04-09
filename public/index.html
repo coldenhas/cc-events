@@ -76,8 +76,9 @@ async function submitLogin() {
   errEl.textContent = '';
   try {
     await doLogin(pw);
-    showAppShell();
-    if (typeof initApp === 'function') initApp();
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    navigate('dashboard');
   } catch(e) {
     errEl.textContent = e.message || 'Invalid password';
   }
