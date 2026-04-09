@@ -303,8 +303,8 @@ async function openTournamentManager(id) {
     ${t.status==='registration' ? `
       <div class="section-title">Register Players</div>
       <div class="input-group mb-8">
-        <input type="text" id="ts-search" placeholder="Search player to add..." oninput="tourneySearchDebounced('${id}', event)" autocomplete="off">
-        <button class="btn btn-primary" onclick="searchForTourney('${id}',document.getElementById('ts-search').value)">Search</button>
+        <input type="text" id="ts-search" placeholder="Search player to add..." autocomplete="off">
+        <button class="btn btn-primary" id="ts-search-btn">Search</button>
       </div>
       <div id="ts-results" class="mb-16"></div>
       <div class="section-title">Registered (${t.players?.length||0})</div>
@@ -355,14 +355,22 @@ async function openTournamentManager(id) {
   if (t.status === 'registration' && t.players?.length) {
     setTimeout(() => loadTourneyLoyalty(t.players), 80);
   }
-}
 
-// Stable debounced wrapper for tournament player search — created once, reused on every keystroke
-let _tourneySearchTimer = null;
-function tourneySearchDebounced(tid, event) {
-  const val = event.target.value;
-  clearTimeout(_tourneySearchTimer);
-  _tourneySearchTimer = setTimeout(() => searchForTourney(tid, val), 300);
+  // Attach search input listener after modal renders — avoids inline handler issues
+  if (t.status === 'registration') {
+    setTimeout(() => {
+      const input = document.getElementById('ts-search');
+      const btn   = document.getElementById('ts-search-btn');
+      if (!input) return;
+      let _timer = null;
+      input.addEventListener('input', () => {
+        clearTimeout(_timer);
+        _timer = setTimeout(() => searchForTourney(id, input.value), 300);
+      });
+      if (btn) btn.addEventListener('click', () => searchForTourney(id, input.value));
+      input.focus();
+    }, 50);
+  }
 }
 
 async function searchForTourney(id, search) {
