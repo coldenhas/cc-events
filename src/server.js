@@ -18,11 +18,7 @@ app.use(session({
 // CORS headers for Shopify app proxy / embedded app
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && (
-    origin.includes('myshopify.com') ||
-    origin.includes('shopify.com') ||
-    origin.includes('clutteredcollectibles.com')
-  )) {
+  if (origin && (origin.includes('myshopify.com') || origin.includes('shopify.com'))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
@@ -38,6 +34,7 @@ app.use(express.static(publicPath));
 app.use('/api/players',     require('../routes/players'));
 app.use('/api/tournaments', require('../routes/tournaments'));
 app.use('/api/events',      require('../routes/events'));
+app.use('/api/loyalty',     require('../routes/loyalty_search'));
 
 // Dashboard stats
 app.get('/api/dashboard', async (req, res) => {

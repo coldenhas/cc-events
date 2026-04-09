@@ -102,17 +102,35 @@ router.delete('/:id', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/tournaments/:id/players — register player
+// POST /api/tournaments/:id/players — register player (local playerId OR loyalty member)
 router.post('/:id/players', async (req, res) => {
   try {
-    const { playerId } = req.body;
+    const { playerId, loyaltyId, name, email } = req.body;
     const t = await db.tournaments.findOne({ _id: req.params.id });
     if (!t) return res.status(404).json({ error: 'Not found' });
     if (t.status !== 'registration') return res.status(400).json({ error: 'Registration closed' });
-    const player = await db.players.findOne({ _id: playerId });
-    if (!player) return res.status(404).json({ error: 'Player not found' });
-    if ((t.players||[]).find(p => p.playerId === playerId)) return res.status(400).json({ error: 'Already registered' });
-    t.players.push({ playerId, name: player.name, email: player.email||null, points: 0, paid: false });
+
+    let playerName  = name  || null;
+    let playerEmail = email || null;
+    let pid         = playerId || loyaltyId || null;
+
+    // If local playerId provided, look up from local DB
+    if (playerId) {
+      const player = await db.players.findOne({ _id: playerId });
+      if (!player) return res.status(404).json({ error: 'Player not found' });
+      playerName  = player.name;
+      playerEmail = player.email || null;
+      pid         = playerId;
+    }
+
+    if (!playerName) return res.status(400).json({ error: 'Name is required' });
+
+    // Prevent duplicate registration
+    if ((t.players||[]).find(p => p.playerId === pid || (playerEmail && p.email === playerEmail))) {
+      return res.status(400).json({ error: 'Already registered' });
+    }
+
+    t.players.push({ playerId: pid, name: playerName, email: playerEmail, points: 0, paid: false });
     await db.tournaments.update({ _id: req.params.id }, { $set: { players: t.players } });
     res.json(t);
   } catch(e) { res.status(500).json({ error: e.message }); }

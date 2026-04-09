@@ -367,23 +367,28 @@ function tourneySearchDebounced(tid, event) {
 
 async function searchForTourney(id, search) {
   if (!search || search.length < 2) return;
-  const players = await api.get(`/api/players?search=${encodeURIComponent(search)}`);
-  if (!players.length) { document.getElementById('ts-results').innerHTML = '<div class="text-muted">No players found</div>'; return; }
+  const el = document.getElementById('ts-results');
+  el.innerHTML = '<div class="text-muted">Searching...</div>';
 
-  // Fetch loyalty data for all results in parallel
-  const loyaltyData = await Promise.all(
-    players.slice(0,5).map(p => api.get(`/api/players/${p._id}/loyalty`).catch(() => ({ found: false })))
-  );
+  const members = await api.get(`/api/loyalty/search?q=${encodeURIComponent(search)}`);
 
-  document.getElementById('ts-results').innerHTML = players.slice(0,5).map((p, i) => {
-    const loy = loyaltyData[i];
-    const loyBadge = loy.found
-      ? `<span style="font-size:11px;color:#f5c518;margin-left:6px">${loy.tier?.icon||''} ${loy.balance?.toLocaleString()} pts</span>`
+  if (!members.length) {
+    el.innerHTML = '<div class="text-muted">No loyalty members found</div>';
+    return;
+  }
+
+  el.innerHTML = members.slice(0, 8).map(m => {
+    const loyBadge = m.tier
+      ? `<span style="font-size:11px;color:#f5c518;margin-left:6px">${m.tier.icon||''} ${m.balance?.toLocaleString()} pts · ${m.tier.name}</span>`
       : '';
     return `
     <div class="flex-between" style="padding:6px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px">
-      <span>${p.name} <span class="text-muted">${p.city||''}</span>${loyBadge}</span>
-      <button class="btn btn-sm btn-primary" onclick="addTourneyPlayer('${id}','${p._id}')">Add</button>
+      <div>
+        <span style="font-weight:600">${m.name}</span>
+        <span class="text-muted" style="font-size:12px;margin-left:6px">${m.email||''}</span>
+        ${loyBadge}
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="addLoyaltyMemberToTourney('${id}','${m._id}','${m.name.replace(/'/g,"\\'")}','${m.email||''}')">Add</button>
     </div>`;
   }).join('');
 }
@@ -406,6 +411,17 @@ async function loadTourneyLoyalty(players) {
       }
     } catch(e) { el.innerHTML = ''; }
   }
+}
+
+async function addLoyaltyMemberToTourney(tid, loyaltyId, name, email) {
+  try {
+    // Register directly using loyalty member data
+    await api.post(`/api/tournaments/${tid}/players`, { loyaltyId, name, email });
+    toast(`${name} added`);
+    document.getElementById('ts-results').innerHTML = '';
+    document.getElementById('ts-search').value = '';
+    openTournamentManager(tid);
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 async function addTourneyPlayer(tid, pid)    { try { await api.post(`/api/tournaments/${tid}/players`,{playerId:pid}); toast('Player added'); openTournamentManager(tid); } catch(e) { toast(e.message,'error'); } }
