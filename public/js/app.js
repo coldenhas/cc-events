@@ -303,7 +303,7 @@ async function openTournamentManager(id) {
     ${t.status==='registration' ? `
       <div class="section-title">Register Players</div>
       <div class="input-group mb-8">
-        <input type="text" id="ts-search" placeholder="Search player to add..." oninput="debounce(()=>searchForTourney('${id}',this.value),250)()" autocomplete="off">
+        <input type="text" id="ts-search" placeholder="Search player to add..." oninput="tourneySearchDebounced('${id}', event)" autocomplete="off">
         <button class="btn btn-primary" onclick="searchForTourney('${id}',document.getElementById('ts-search').value)">Search</button>
       </div>
       <div id="ts-results" class="mb-16"></div>
@@ -355,6 +355,14 @@ async function openTournamentManager(id) {
   if (t.status === 'registration' && t.players?.length) {
     setTimeout(() => loadTourneyLoyalty(t.players), 80);
   }
+}
+
+// Stable debounced wrapper for tournament player search — created once, reused on every keystroke
+let _tourneySearchTimer = null;
+function tourneySearchDebounced(tid, event) {
+  const val = event.target.value;
+  clearTimeout(_tourneySearchTimer);
+  _tourneySearchTimer = setTimeout(() => searchForTourney(tid, val), 300);
 }
 
 async function searchForTourney(id, search) {
