@@ -341,10 +341,12 @@ async function openTournamentManager(id) {
     ${t.status==='registration' ? `
       <div class="section-title">Register Players</div>
       <div class="input-group mb-8">
-        <input type="text" id="ts-search" placeholder="Search player to add..." autocomplete="off">
+        <input type="text" id="ts-search" placeholder="Search loyalty member to add..." autocomplete="off">
         <button class="btn btn-primary" id="ts-search-btn">Search</button>
+        <button class="btn btn-secondary" onclick="openLoyaltyScan('${id}')" style="background:#1a1a1a;border:1px solid #f5c518;color:#f5c518;">📷 Scan Card</button>
       </div>
       <div id="ts-results" class="mb-16"></div>
+      <div id="loyalty-scan-result" style="display:none;margin-bottom:12px;"></div>
       <div class="section-title">Registered (${t.players?.length||0})</div>
       <div id="ts-registered-list">
       ${(t.players||[]).map(p=>`
