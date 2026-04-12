@@ -1104,6 +1104,9 @@ function openLoyaltyScan(tourneyId) {
       </div>
     </div>
     <div id="loyalty-member-card" style="display:none;margin-top:12px;"></div>
+    <div style="margin-top:8px;text-align:center;">
+      <button class="btn btn-ghost btn-sm" onclick="openLoyaltyScan(loyaltyScanTourneyId)">↺ Retry scan</button>
+    </div>
   `);
 
   setTimeout(async () => {
