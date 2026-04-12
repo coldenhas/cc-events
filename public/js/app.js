@@ -1080,6 +1080,142 @@ async function markPrizePaid(tid, place) {
 // ════════════════════════════════════════════════════════════════════════════
 // RANKINGS
 // ════════════════════════════════════════════════════════════════════════════
+// ── Loyalty QR Scanner ────────────────────────────────────────────────────────
+let loyaltyScanTourneyId = null;
+let loyaltyScanStream = null;
+
+function openLoyaltyScan(tourneyId) {
+  loyaltyScanTourneyId = tourneyId;
+  openModal('Scan Loyalty Card', `
+    <p style="color:#888;font-size:13px;margin-bottom:12px;">Ask the customer to open their loyalty page and show their QR code.</p>
+    <div style="position:relative;width:100%;background:#000;border-radius:8px;overflow:hidden;margin-bottom:12px;">
+      <video id="loyalty-qr-video" style="width:100%;height:240px;object-fit:cover;" playsinline autoplay muted></video>
+      <canvas id="loyalty-qr-canvas" style="display:none;"></canvas>
+      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;">
+        <div style="width:180px;height:180px;border:2px solid #f5c518;border-radius:8px;box-shadow:0 0 0 2000px rgba(0,0,0,0.5);"></div>
+      </div>
+    </div>
+    <div id="loyalty-scan-status" style="text-align:center;font-size:13px;color:#888;">Starting camera...</div>
+    <div style="margin-top:12px;">
+      <div style="font-size:12px;color:#888;margin-bottom:6px;">Or enter manually:</div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="loyalty-manual-input" placeholder="Email or phone..." style="flex:1;background:#1a1a1a;border:1px solid #333;border-radius:6px;color:#fff;padding:8px 10px;font-size:13px;outline:none;">
+        <button class="btn btn-primary" onclick="lookupLoyaltyManual()">Look up</button>
+      </div>
+    </div>
+    <div id="loyalty-member-card" style="display:none;margin-top:12px;"></div>
+  `);
+
+  setTimeout(async () => {
+    const video = document.getElementById('loyalty-qr-video');
+    const canvas = document.getElementById('loyalty-qr-canvas');
+    const status = document.getElementById('loyalty-scan-status');
+    if (!video || !canvas) return;
+
+    if (typeof jsQR === 'undefined') {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+      document.head.appendChild(script);
+      await new Promise(r => { script.onload = r; script.onerror = () => r(); });
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      video.srcObject = stream;
+      loyaltyScanStream = stream;
+      status.textContent = 'Point camera at QR code...';
+      const ctx = canvas.getContext('2d');
+      let scanning = true;
+
+      function scan() {
+        if (!scanning || !document.getElementById('loyalty-qr-video')) { scanning = false; return; }
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          if (typeof jsQR !== 'undefined') {
+            const code = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: 'dontInvert' });
+            if (code && code.data && code.data.startsWith('cc-member:')) {
+              scanning = false;
+              stream.getTracks().forEach(t => t.stop());
+              loyaltyScanStream = null;
+              if (navigator.vibrate) navigator.vibrate(100);
+              status.textContent = 'Detected — loading member...';
+              lookupLoyaltyById(code.data.replace('cc-member:', ''));
+              return;
+            }
+          }
+        }
+        requestAnimationFrame(scan);
+      }
+      requestAnimationFrame(scan);
+    } catch(e) {
+      status.textContent = 'Camera unavailable — use manual entry below';
+    }
+  }, 200);
+}
+
+async function lookupLoyaltyById(memberId) {
+  try {
+    const d = await api.get('/api/loyalty/scan/' + encodeURIComponent(memberId));
+    showLoyaltyMemberCard(d);
+  } catch(e) {
+    const s = document.getElementById('loyalty-scan-status');
+    if (s) s.textContent = 'Lookup failed: ' + e.message;
+  }
+}
+
+async function lookupLoyaltyManual() {
+  const q = (document.getElementById('loyalty-manual-input') || {}).value;
+  if (!q || !q.trim()) return;
+  try {
+    const d = await api.get('/api/loyalty/search?q=' + encodeURIComponent(q.trim()));
+    showLoyaltyMemberCard(d && d.found ? d : { found: false });
+  } catch(e) {
+    const s = document.getElementById('loyalty-scan-status');
+    if (s) s.textContent = 'Not found';
+  }
+}
+
+function showLoyaltyMemberCard(d) {
+  const cardEl = document.getElementById('loyalty-member-card');
+  const statusEl = document.getElementById('loyalty-scan-status');
+  if (!cardEl) return;
+  if (!d || !d.found) {
+    if (statusEl) statusEl.textContent = 'No loyalty account found';
+    cardEl.style.display = 'none';
+    return;
+  }
+  if (statusEl) statusEl.textContent = 'Member found';
+  const discountText = d.discountPercent > 0
+    ? '<span style="display:inline-block;padding:3px 8px;background:rgba(60,186,111,0.15);border:1px solid rgba(60,186,111,0.3);border-radius:4px;font-size:11px;font-weight:700;color:#3cba6f;">' + d.discountPercent + '% EVENT DISCOUNT</span>'
+    : '<span style="font-size:12px;color:#888;">No discount at Base tier</span>';
+  cardEl.style.display = 'block';
+  cardEl.innerHTML =
+    '<div style="background:#1a1a1a;border:1px solid #f5c518;border-radius:8px;padding:14px;display:flex;align-items:center;gap:14px;">' +
+      '<div style="font-size:32px;">' + (d.tierIcon||'⭐') + '</div>' +
+      '<div style="flex:1;">' +
+        '<div style="font-size:15px;font-weight:700;color:#fff;">' + (d.firstName||'Member') + '</div>' +
+        '<div style="font-size:12px;color:#888;margin-top:2px;">' + d.tier + ' · ' + (d.totalPoints||0).toLocaleString() + ' pts</div>' +
+        '<div style="margin-top:6px;">' + discountText + '</div>' +
+      '</div>' +
+      '<div style="text-align:right;">' +
+        '<div style="font-size:11px;color:#888;">pts value</div>' +
+        '<div style="font-size:14px;font-weight:700;color:#f5c518;">$' + (d.pointsValue||0) + '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div style="margin-top:8px;font-size:12px;color:#888;">Apply discount manually to entry fee.</div>';
+}
+
+const _origCloseForScan = closeModal;
+window.closeModal = function() {
+  if (loyaltyScanStream) {
+    try { loyaltyScanStream.getTracks().forEach(t => t.stop()); } catch(e) {}
+    loyaltyScanStream = null;
+  }
+  _origCloseForScan();
+};
+
 async function loadRankings() {
   const el = document.getElementById('page-rankings');
   el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div>Loading rankings...</div></div>';
