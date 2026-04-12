@@ -674,6 +674,40 @@ async function loadTournamentDetail(id) {
         `).join('')}
       </div>
 
+      <!-- Registration section (shown when status is registration) -->
+      ${(t.status === 'registration' || t.status === 'Registration') ? `
+      <div class="card" style="margin-bottom:16px;padding:16px;">
+        <div class="section-title" style="margin-bottom:12px;">Register Players</div>
+        <div class="input-group mb-8" style="display:flex;gap:8px;">
+          <input type="text" id="ts-search-detail" placeholder="Search loyalty member..." autocomplete="off"
+            style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 12px;font-size:14px;outline:none;">
+          <button class="btn btn-primary" id="ts-search-detail-btn">Search</button>
+          <button class="btn" onclick="openLoyaltyScan('${id}')"
+            style="background:#1a1a1a;border:1px solid #f5c518;color:#f5c518;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px;">
+            📷 Scan Card
+          </button>
+        </div>
+        <div id="ts-results-detail" class="mb-16"></div>
+        <div id="loyalty-scan-result-detail" style="display:none;margin-bottom:12px;"></div>
+        <div class="section-title" style="margin-bottom:8px;">Registered (${t.players?.length||0})</div>
+        <div id="ts-registered-detail">
+          ${(t.players||[]).map(p=>`
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+              <div>
+                <span style="font-weight:600">${p.name}</span>
+                ${p.email ? `<span id="loy-detail-${p.playerId}" style="font-size:11px;color:#888;margin-left:8px;">loading...</span>` : ''}
+              </div>
+              <button class="btn btn-sm btn-danger" onclick="removeTourneyPlayerDetail('${id}','${p.playerId}')">Remove</button>
+            </div>`).join('') || '<div style="color:#888;font-size:13px;">No players yet</div>'}
+        </div>
+        <div style="margin-top:16px;display:flex;gap:8px;">
+          <button class="btn btn-success" onclick="startTournamentDetail('${id}')"
+            ${(t.players?.length||0) < 2 ? 'disabled title="Need 2+ players"' : ''}>
+            Start Tournament →
+          </button>
+        </div>
+      </div>` : ''}
+
       <!-- Current round matches -->
       <div id="round-matches-${id}">
         ${renderRoundMatches(currentMatches, id, t.currentRound)}
@@ -729,6 +763,31 @@ async function loadTournamentDetail(id) {
   } catch(e) {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div>${e.message}</div></div>`;
   }
+
+  // Attach search for detail page registration
+  setTimeout(() => {
+    const inp = document.getElementById('ts-search-detail');
+    const btn = document.getElementById('ts-search-detail-btn');
+    const tid = id;
+    if (inp) {
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') searchForTourneyDetail(tid, inp.value); });
+      inp.focus();
+    }
+    if (btn) btn.addEventListener('click', () => searchForTourneyDetail(tid, document.getElementById('ts-search-detail').value));
+
+    // Load loyalty for registered players
+    const t_data_el = document.getElementById('ts-registered-detail');
+    if (t_data_el) {
+      document.querySelectorAll('[id^="loy-detail-"]').forEach(async el => {
+        const pid = el.id.replace('loy-detail-', '');
+        try {
+          const loy = await api.get(`/api/players/${pid}/loyalty`).catch(() => ({ found: false }));
+          if (loy.found) el.textContent = `${loy.tierIcon||'⭐'} ${loy.totalPoints?.toLocaleString()||0} pts`;
+          else el.textContent = '';
+        } catch(e) { el.textContent = ''; }
+      });
+    }
+  }, 100);
 }
 
 function renderRoundMatches(matches, tid, round) {
@@ -778,6 +837,45 @@ async function recordResultDetail(mid, result, tid) {
     await api.put(`/api/tournaments/matches/${mid}`, { result });
     loadTournamentDetail(tid);
   } catch(e) { toast(e.message, 'error'); }
+}
+
+async function startTournamentDetail(id) {
+  try { await api.post(`/api/tournaments/${id}/start`); toast('Tournament started!'); loadTournamentDetail(id); }
+  catch(e) { toast(e.message, 'error'); }
+}
+
+async function removeTourneyPlayerDetail(tid, pid) {
+  try { await api.delete(`/api/tournaments/${tid}/players/${pid}`); loadTournamentDetail(tid); }
+  catch(e) { toast(e.message, 'error'); }
+}
+
+async function addTourneyPlayerDetail(tid, pid) {
+  try { await api.post(`/api/tournaments/${tid}/players`, { playerId: pid }); toast('Player added'); loadTournamentDetail(tid); }
+  catch(e) { toast(e.message, 'error'); }
+}
+
+async function searchForTourneyDetail(tid, q) {
+  if (!q || q.length < 2) { document.getElementById('ts-results-detail').innerHTML = ''; return; }
+  try {
+    const d = await api.get(`/api/loyalty/search?q=${encodeURIComponent(q)}`);
+    const resultsEl = document.getElementById('ts-results-detail');
+    if (!resultsEl) return;
+    if (!d || (!d.found && !(d.members && d.members.length))) {
+      resultsEl.innerHTML = '<div style="color:#888;font-size:13px;padding:8px 0;">No loyalty members found</div>';
+      return;
+    }
+    const members = d.members || (d.found ? [d] : []);
+    resultsEl.innerHTML = members.map(m => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;background:var(--bg2);border-radius:6px;margin-bottom:6px;cursor:pointer;"
+        onclick="addTourneyPlayerDetail('${tid}','${m.shopifyCustomerId||m.customerId}')">
+        <div>
+          <span style="font-weight:600">${m.firstName || 'Member'}</span>
+          <span style="font-size:11px;color:#888;margin-left:8px;">${m.email || ''}</span>
+          <span style="font-size:11px;color:#f5c518;margin-left:8px;">${m.tierIcon || '⭐'} ${m.tier || 'Base'}</span>
+        </div>
+        <button class="btn btn-sm btn-primary">Add</button>
+      </div>`).join('');
+  } catch(e) { console.error(e); }
 }
 
 async function nextRoundDetail(id) {
