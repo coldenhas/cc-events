@@ -1190,24 +1190,101 @@ function showLoyaltyMemberCard(d) {
     return;
   }
   if (statusEl) statusEl.textContent = 'Member found';
-  const discountText = d.discountPercent > 0
-    ? '<span style="display:inline-block;padding:3px 8px;background:rgba(60,186,111,0.15);border:1px solid rgba(60,186,111,0.3);border-radius:4px;font-size:11px;font-weight:700;color:#3cba6f;">' + d.discountPercent + '% EVENT DISCOUNT</span>'
-    : '<span style="font-size:12px;color:#888;">No discount at Base tier</span>';
+
+  // Store member data for action buttons
+  window._loyaltyMember = d;
+
+  const discountBadge = d.discountPercent > 0
+    ? '<span style="display:inline-block;padding:3px 8px;background:rgba(60,186,111,0.15);border:1px solid rgba(60,186,111,0.3);border-radius:4px;font-size:11px;font-weight:700;color:#3cba6f;">' + d.discountPercent + '% tier discount available</span>'
+    : '<span style="font-size:11px;color:#888;">No tier discount (Base)</span>';
+
+  const pointsRedeemable = d.pointsValue > 0
+    ? '<span style="font-size:11px;color:#f5c518;">$' + d.pointsValue + ' redeemable from points</span>'
+    : '<span style="font-size:11px;color:#888;">No points to redeem yet</span>';
+
   cardEl.style.display = 'block';
   cardEl.innerHTML =
-    '<div style="background:#1a1a1a;border:1px solid #f5c518;border-radius:8px;padding:14px;display:flex;align-items:center;gap:14px;">' +
+    // Member info card
+    '<div style="background:#1a1a1a;border:1px solid #f5c518;border-radius:8px;padding:14px;display:flex;align-items:center;gap:14px;margin-bottom:10px;">' +
       '<div style="font-size:32px;">' + (d.tierIcon||'⭐') + '</div>' +
       '<div style="flex:1;">' +
-        '<div style="font-size:15px;font-weight:700;color:#fff;">' + (d.firstName||'Member') + '</div>' +
+        '<div style="font-size:15px;font-weight:700;color:#fff;">' + (d.firstName||'Member') + (d.lastName ? ' ' + d.lastName : '') + '</div>' +
         '<div style="font-size:12px;color:#888;margin-top:2px;">' + d.tier + ' · ' + (d.totalPoints||0).toLocaleString() + ' pts</div>' +
-        '<div style="margin-top:6px;">' + discountText + '</div>' +
-      '</div>' +
-      '<div style="text-align:right;">' +
-        '<div style="font-size:11px;color:#888;">pts value</div>' +
-        '<div style="font-size:14px;font-weight:700;color:#f5c518;">$' + (d.pointsValue||0) + '</div>' +
+        '<div style="margin-top:4px;">' + discountBadge + '</div>' +
+        '<div style="margin-top:2px;">' + pointsRedeemable + '</div>' +
       '</div>' +
     '</div>' +
-    '<div style="margin-top:8px;font-size:12px;color:#888;">Apply discount manually to entry fee.</div>';
+
+    // Action buttons — customer must approve each
+    '<div style="display:grid;grid-template-columns:1fr;gap:8px;">' +
+
+      // Register button
+      '<button onclick="loyaltyRegisterPlayer()" ' +
+        'style="background:#1a6b3a;border:1px solid #3cba6f;color:#3cba6f;border-radius:6px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;">' +
+        '➕ Register ' + (d.firstName||'Member') + ' for this tournament' +
+      '</button>' +
+
+      // Discount button (only show if discount available)
+      (d.discountPercent > 0
+        ? '<button onclick="loyaltyApplyDiscount()" ' +
+            'style="background:#1a1a2a;border:1px solid #4a9eff;color:#4a9eff;border-radius:6px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;" ' +
+            'title="Ask customer to confirm before applying">' +
+            '🏷️ Apply ' + d.discountPercent + '% entry discount (customer must approve)' +
+          '</button>'
+        : '') +
+
+      // Redeem points button (only show if points available)
+      (d.pointsValue > 0
+        ? '<button onclick="loyaltyRedeemPoints()" ' +
+            'style="background:#1a1a1a;border:1px solid #f5c518;color:#f5c518;border-radius:6px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;" ' +
+            'title="Ask customer to confirm before redeeming">' +
+            '⭐ Redeem points — $' + d.pointsValue + ' off entry (customer must approve)' +
+          '</button>'
+        : '') +
+
+    '</div>' +
+    '<div id="loyalty-action-result" style="margin-top:8px;font-size:12px;color:#888;"></div>';
+}
+
+function loyaltyRegisterPlayer() {
+  const m = window._loyaltyMember;
+  if (!m || !loyaltyScanTourneyId) return;
+  // Look up by email to find their player record
+  api.get('/api/loyalty/search?q=' + encodeURIComponent(m.email || m.firstName))
+    .then(d => {
+      if (d.found) {
+        const pid = d.shopifyCustomerId || d.customerId;
+        return api.post('/api/tournaments/' + loyaltyScanTourneyId + '/players', { playerId: pid });
+      }
+      throw new Error('Could not find player record');
+    })
+    .then(() => {
+      document.getElementById('loyalty-action-result').textContent = '✓ ' + (m.firstName||'Member') + ' registered!';
+      document.getElementById('loyalty-action-result').style.color = '#3cba6f';
+      toast((m.firstName||'Member') + ' registered for tournament');
+      // Reload the tournament detail
+      setTimeout(() => { closeModal(); loadTournamentDetail(loyaltyScanTourneyId); }, 1000);
+    })
+    .catch(e => {
+      document.getElementById('loyalty-action-result').textContent = '✗ ' + e.message;
+      document.getElementById('loyalty-action-result').style.color = '#e03c3c';
+    });
+}
+
+function loyaltyApplyDiscount() {
+  const m = window._loyaltyMember;
+  if (!m) return;
+  const resultEl = document.getElementById('loyalty-action-result');
+  resultEl.style.color = '#4a9eff';
+  resultEl.textContent = '✓ ' + m.discountPercent + '% discount noted for ' + (m.firstName||'Member') + '. Apply manually to entry fee collection.';
+}
+
+function loyaltyRedeemPoints() {
+  const m = window._loyaltyMember;
+  if (!m) return;
+  const resultEl = document.getElementById('loyalty-action-result');
+  resultEl.style.color = '#f5c518';
+  resultEl.textContent = '✓ Points redemption noted — $' + m.pointsValue + ' off. Remind customer to redeem at clutteredcollectibles.com/apps/loyalty after the event.';
 }
 
 const _origCloseForScan = closeModal;
