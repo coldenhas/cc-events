@@ -7,24 +7,25 @@ const LOYALTY_SECRET = process.env.INTERNAL_API_SECRET || '';
 
 async function loyaltyFetch(path) {
   const fetch = (await import('node-fetch')).default;
+  console.log('[loyalty] fetching:', LOYALTY_URL + path, 'secret set:', !!LOYALTY_SECRET);
   const r = await fetch(LOYALTY_URL + path, {
     headers: { 'x-internal-secret': LOYALTY_SECRET },
   });
-  if (!r.ok) return { found: false };
-  return r.json();
+  const text = await r.text();
+  console.log('[loyalty] response:', r.status, text.slice(0, 200));
+  try { return JSON.parse(text); } catch(e) { return { found: false, error: text }; }
 }
 
-// GET /api/loyalty/scan/:id — QR code scan lookup
 router.get('/scan/:id', async (req, res) => {
   try {
     const data = await loyaltyFetch('/internal/customer-by-id/' + encodeURIComponent(req.params.id));
     res.json(data);
   } catch(e) {
+    console.error('[loyalty/scan] error:', e.message);
     res.json({ found: false, error: e.message });
   }
 });
 
-// GET /api/loyalty/search?q= — manual lookup by email or phone
 router.get('/search', async (req, res) => {
   const q = (req.query.q || '').trim();
   if (!q) return res.json({ found: false, members: [] });
@@ -32,7 +33,6 @@ router.get('/search', async (req, res) => {
     const isEmail = q.includes('@');
     const param = isEmail ? 'email=' + encodeURIComponent(q) : 'phone=' + encodeURIComponent(q);
     const data = await loyaltyFetch('/internal/customer-by-contact?' + param);
-    // Return in format expected by events app
     if (data.found) {
       res.json({ found: true, members: [data], ...data });
     } else {
