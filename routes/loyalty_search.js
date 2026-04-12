@@ -1,3 +1,4 @@
+'use strict';
 const express = require('express');
 const router = express.Router();
 
@@ -5,14 +6,15 @@ const LOYALTY_URL = process.env.LOYALTY_APP_URL || 'https://cluttered-collectibl
 const LOYALTY_SECRET = process.env.INTERNAL_API_SECRET || '';
 
 async function loyaltyFetch(path) {
-  const fetch = require('node-fetch');
+  const fetch = (await import('node-fetch')).default;
   const r = await fetch(LOYALTY_URL + path, {
     headers: { 'x-internal-secret': LOYALTY_SECRET },
   });
+  if (!r.ok) return { found: false };
   return r.json();
 }
 
-// GET /api/loyalty/scan/:id
+// GET /api/loyalty/scan/:id — QR code scan lookup
 router.get('/scan/:id', async (req, res) => {
   try {
     const data = await loyaltyFetch('/internal/customer-by-id/' + encodeURIComponent(req.params.id));
@@ -22,27 +24,22 @@ router.get('/scan/:id', async (req, res) => {
   }
 });
 
-// GET /api/loyalty/search?q=
+// GET /api/loyalty/search?q= — manual lookup by email or phone
 router.get('/search', async (req, res) => {
-  const q = req.query.q || '';
-  if (!q) return res.json({ found: false });
+  const q = (req.query.q || '').trim();
+  if (!q) return res.json({ found: false, members: [] });
   try {
     const isEmail = q.includes('@');
     const param = isEmail ? 'email=' + encodeURIComponent(q) : 'phone=' + encodeURIComponent(q);
     const data = await loyaltyFetch('/internal/customer-by-contact?' + param);
-    res.json(data);
+    // Return in format expected by events app
+    if (data.found) {
+      res.json({ found: true, members: [data], ...data });
+    } else {
+      res.json({ found: false, members: [] });
+    }
   } catch(e) {
-    res.json({ found: false, error: e.message });
-  }
-});
-
-// GET /api/players/:id/loyalty (existing route — keep working)
-router.get('/player/:id', async (req, res) => {
-  try {
-    const data = await loyaltyFetch('/internal/customer-by-contact?email=' + encodeURIComponent(req.params.id));
-    res.json(data);
-  } catch(e) {
-    res.json({ found: false });
+    res.json({ found: false, members: [], error: e.message });
   }
 });
 
