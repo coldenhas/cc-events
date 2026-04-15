@@ -469,12 +469,25 @@ async function loadTourneyLoyalty(players) {
 
 async function addLoyaltyMemberToTourney(tid, loyaltyId, name, email) {
   try {
-    // Register directly using loyalty member data
+    // Register directly using loyalty member data (loyaltyId = shopifyCustomerId)
     await api.post(`/api/tournaments/${tid}/players`, { loyaltyId, name, email });
     toast(`${name} added`);
-    document.getElementById('ts-results').innerHTML = '';
-    document.getElementById('ts-search').value = '';
-    openTournamentManager(tid);
+    // Clear search fields — only present in modal view, not detail view
+    const resultsEl = document.getElementById('ts-results');
+    const searchEl  = document.getElementById('ts-search');
+    if (resultsEl) resultsEl.innerHTML = '';
+    if (searchEl)  searchEl.value = '';
+    // Refresh whichever view is active
+    const detailEl = document.getElementById('ts-results-detail');
+    if (detailEl) {
+      // Detail page view
+      const detailSearch = document.getElementById('ts-search-detail');
+      if (detailSearch) detailSearch.value = '';
+      detailEl.innerHTML = '';
+      loadTournamentDetail(tid);
+    } else {
+      openTournamentManager(tid);
+    }
   } catch(e) { toast(e.message, 'error'); }
 }
 
@@ -873,16 +886,22 @@ async function searchForTourneyDetail(tid, q) {
       return;
     }
     const members = d.members || (d.found ? [d] : []);
-    resultsEl.innerHTML = members.map(m => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;background:var(--bg2);border-radius:6px;margin-bottom:6px;cursor:pointer;"
-        onclick="addTourneyPlayerDetail('${tid}','${m.shopifyCustomerId||m.customerId}')">
+    resultsEl.innerHTML = members.map(m => {
+      const mName     = ((m.firstName || 'Member') + ' ' + (m.lastName || '')).trim();
+      const mId       = m.shopifyCustomerId || m.customerId || '';
+      const safeMName = mName.replace(/'/g, "\'");
+      const safeMEmail= (m.email || '').replace(/'/g, "\'");
+      return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;background:var(--bg2);border-radius:6px;margin-bottom:6px;">
         <div>
-          <span style="font-weight:600">${m.firstName || 'Member'} ${m.lastName || ''}</span>
+          <span style="font-weight:600">${mName}</span>
           <span style="font-size:11px;color:#888;margin-left:8px;">${m.email || ''}</span>
           <span style="font-size:11px;color:#f5c518;margin-left:8px;">${m.tierIcon || '⭐'} ${m.tier || 'Base'}</span>
         </div>
-        <button class="btn btn-sm btn-primary">Add</button>
-      </div>`).join('');
+        <button class="btn btn-sm btn-primary"
+          onclick="addLoyaltyMemberToTourney('${tid}','${mId}','${safeMName}','${safeMEmail}')">Add</button>
+      </div>`;
+    }).join('');
   } catch(e) { console.error(e); }
 }
 
