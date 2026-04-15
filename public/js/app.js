@@ -471,22 +471,39 @@ async function addLoyaltyMemberToTourney(tid, loyaltyId, name, email) {
   try {
     // Register directly using loyalty member data (loyaltyId = shopifyCustomerId)
     await api.post(`/api/tournaments/${tid}/players`, { loyaltyId, name, email });
-    toast(`${name} added`);
-    // Clear search fields — only present in modal view, not detail view
-    const resultsEl = document.getElementById('ts-results');
-    const searchEl  = document.getElementById('ts-search');
-    if (resultsEl) resultsEl.innerHTML = '';
-    if (searchEl)  searchEl.value = '';
-    // Refresh whichever view is active
-    const detailEl = document.getElementById('ts-results-detail');
-    if (detailEl) {
-      // Detail page view
-      const detailSearch = document.getElementById('ts-search-detail');
-      if (detailSearch) detailSearch.value = '';
-      detailEl.innerHTML = '';
-      loadTournamentDetail(tid);
-    } else {
-      openTournamentManager(tid);
+    toast(`${name} added — generate discount code below if needed`);
+
+    // Clear search result rows but DO NOT reload the page —
+    // keep the member card visible so staff can still generate a discount code
+    const resultsEl   = document.getElementById('ts-results');
+    const searchEl    = document.getElementById('ts-search');
+    const detailRows  = document.getElementById('ts-results-detail');
+    const detailSearch= document.getElementById('ts-search-detail');
+    if (resultsEl)    resultsEl.innerHTML = '';
+    if (searchEl)     searchEl.value = '';
+    if (detailRows)   detailRows.innerHTML = '';
+    if (detailSearch) detailSearch.value = '';
+
+    // Update the registered count badge without a full reload
+    // (full reload happens when staff is done and navigates away or clicks Back)
+    window._pendingTourneyReload = tid;
+
+    // If member card is showing, swap Add button to a "✓ Registered" badge
+    const slot = document.getElementById('loyalty-scan-result-detail') ||
+                 document.getElementById('loyalty-member-card');
+    if (slot) {
+      // Replace Add button in result rows (already cleared above)
+      // Add a registered badge above the member card
+      const existing = document.getElementById('loyalty-registered-badge');
+      if (!existing) {
+        slot.insertAdjacentHTML('beforebegin',
+          '<div id="loyalty-registered-badge" ' +
+            'style="background:#1a3a1a;border:1px solid #3cba6f;border-radius:6px;padding:8px 12px;' +
+                   'font-size:13px;color:#3cba6f;font-weight:600;margin-bottom:8px;">'+
+            '✓ ' + name + ' registered — generate a discount code below if needed' +
+          '</div>'
+        );
+      }
     }
   } catch(e) { toast(e.message, 'error'); }
 }
@@ -642,7 +659,13 @@ const loaders = { dashboard:loadDashboard, players:loadPlayers, tournaments:load
 
 function navigate(page, arg) {
   // Clear loyalty member state when leaving a tournament detail page
-  if (page !== 'tournament-detail') window._loyaltyMember = null;
+  if (page !== 'tournament-detail') {
+    window._loyaltyMember = null;
+    // If a tourney reload was pending (after Add without reload), do it now
+    if (window._pendingTourneyReload && page === 'tournament-detail' && arg === window._pendingTourneyReload) {
+      window._pendingTourneyReload = null;
+    }
+  }
   // tournament-detail is a sub-page — don't update nav highlight
   if (page !== 'tournament-detail') {
     document.querySelectorAll('.nav-link').forEach(el => el.classList.toggle('active', el.dataset.page===page));
@@ -812,10 +835,11 @@ async function loadTournamentDetail(id) {
     }
 
     // Re-inject loyalty member card if staff had one loaded before the page reloaded
-    // (page reload from addLoyaltyMemberToTourney wipes the slot — restore it so Redeem is still accessible)
     if (window._loyaltyMember && window._loyaltyMember.found) {
       showLoyaltyMemberCardInline(window._loyaltyMember);
     }
+    // Clear pending reload flag — page has now fully reloaded
+    window._pendingTourneyReload = null;
   }, 100);
 }
 
