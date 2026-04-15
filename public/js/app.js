@@ -959,16 +959,15 @@ function showLoyaltyMemberCardInline(d) {
     '</div>' +
 
     '<div style="display:grid;grid-template-columns:1fr;gap:8px;">' +
-      (d.discountPercent > 0
-        ? '<button onclick="loyaltyApplyDiscount()" ' +
-            'style="background:#1a1a2a;border:1px solid #4a9eff;color:#4a9eff;border-radius:6px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;">' +
-            '🏷️ Apply ' + d.discountPercent + '% entry discount (customer must approve)' +
-          '</button>'
-        : '') +
-      (d.pointsValue > 0
-        ? '<button onclick="loyaltyRedeemPoints()" ' +
+      (d.discountPercent > 0 || _maxDollar > 0
+        ? '<button onclick="openCombinedDiscountFlow()" ' +
             'style="background:#1a1a1a;border:1px solid #f5c518;color:#f5c518;border-radius:6px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;">' +
-            '⭐ Redeem points — up to $' + _maxDollar + ' off (select amount, customer must approve)' +
+            '🎟️ Generate Entry Discount Code' +
+            (d.discountPercent > 0 && _maxDollar > 0
+              ? ' (' + d.discountPercent + '% tier + up to $' + _maxDollar + ' pts)'
+              : d.discountPercent > 0
+                ? ' (' + d.discountPercent + '% tier discount)'
+                : ' (up to $' + _maxDollar + ' off from points)') +
           '</button>'
         : '') +
     '</div>' +
@@ -1315,7 +1314,7 @@ function showLoyaltyMemberCard(d) {
       '</div>' +
     '</div>' +
 
-    // Action buttons — customer must approve each
+    // Action buttons
     '<div style="display:grid;grid-template-columns:1fr;gap:8px;">' +
 
       // Register button
@@ -1324,21 +1323,16 @@ function showLoyaltyMemberCard(d) {
         '➕ Register ' + (d.firstName||'Member') + ' for this tournament' +
       '</button>' +
 
-      // Discount button (only show if discount available)
-      (d.discountPercent > 0
-        ? '<button onclick="loyaltyApplyDiscount()" ' +
-            'style="background:#1a1a2a;border:1px solid #4a9eff;color:#4a9eff;border-radius:6px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;" ' +
-            'title="Ask customer to confirm before applying">' +
-            '🏷️ Apply ' + d.discountPercent + '% entry discount (customer must approve)' +
-          '</button>'
-        : '') +
-
-      // Redeem points button (only show if points available)
-      (d.pointsValue > 0
-        ? '<button onclick="loyaltyRedeemPoints()" ' +
-            'style="background:#1a1a1a;border:1px solid #f5c518;color:#f5c518;border-radius:6px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;" ' +
-            'title="Ask customer to confirm before redeeming">' +
-            '⭐ Redeem points — up to $' + _maxDollar + ' off (select amount, customer must approve)' +
+      // Combined discount button — shown whenever tier % OR points available
+      (d.discountPercent > 0 || _maxDollar > 0
+        ? '<button onclick="openCombinedDiscountFlow()" ' +
+            'style="background:#1a1a1a;border:1px solid #f5c518;color:#f5c518;border-radius:6px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;">' +
+            '🎟️ Generate Entry Discount Code' +
+            (d.discountPercent > 0 && _maxDollar > 0
+              ? ' (' + d.discountPercent + '% tier + up to $' + _maxDollar + ' pts)'
+              : d.discountPercent > 0
+                ? ' (' + d.discountPercent + '% tier discount)'
+                : ' (up to $' + _maxDollar + ' off from points)') +
           '</button>'
         : '') +
 
@@ -1374,212 +1368,174 @@ function loyaltyRegisterPlayer() {
   });
 }
 
-async function loyaltyApplyDiscount() {
+// ── Combined Discount Flow ───────────────────────────────────────────────────
+// Single flow: enter entry fee → preview tier% + points → one Shopify code
+function openCombinedDiscountFlow() {
   const m = window._loyaltyMember;
-  if (!m || !m.discountPercent) return;
+  if (!m) return;
 
-  const resultEl = document.getElementById('loyalty-action-result');
-  if (!resultEl) return;
-  resultEl.style.color = '#888';
-  resultEl.textContent = 'Generating tier discount code...';
-
-  try {
-    const r = await fetch(CC_EVENTS_BASE + '/api/loyalty/tier-discount', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        customerId:      m.customerId,
-        discountPercent: m.discountPercent,
-        shop:            'cluttered-collectibles-and-comics.myshopify.com'
-      })
-    });
-    const d = await r.json();
-    if (d.success) {
-      resultEl.style.color = '#4a9eff';
-      resultEl.innerHTML =
-        '<div style="background:#0a0a1a;border:1px solid #4a9eff;border-radius:8px;padding:14px;margin-top:4px;">' +
-          '<div style="font-size:11px;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;">' + d.tierName + ' Discount Code — show to customer:</div>' +
-          '<div style="font-size:26px;font-weight:800;letter-spacing:4px;color:#4a9eff;font-family:monospace;">' + d.code + '</div>' +
-          '<div style="font-size:12px;color:#3cba6f;margin-top:8px;">' + d.discountPercent + '% off · no points deducted · expires 24 hrs</div>' +
-          '<div style="font-size:11px;color:#888;margin-top:4px;">Enter this code in Shopify POS when charging entry fee.</div>' +
-        '</div>';
-    } else {
-      resultEl.style.color = '#e03c3c';
-      resultEl.textContent = 'Failed: ' + (d.error || 'Unknown error');
-    }
-  } catch(e) {
-    resultEl.style.color = '#e03c3c';
-    resultEl.textContent = 'Error: ' + e.message;
-  }
-}
-
-
-// Returns the max dollar value redeemable given a points balance, based on available tiers
-function maxRedeemDollar(totalPoints) {
-  const TIERS = [
-    { points: 100,  dollar: 1  },
-    { points: 500,  dollar: 5  },
-    { points: 1000, dollar: 10 },
-    { points: 2500, dollar: 25 },
-    { points: 5000, dollar: 50 },
-  ];
-  const affordable = TIERS.filter(t => t.points <= totalPoints);
-  if (!affordable.length) return 0;
-  return affordable[affordable.length - 1].dollar;
-}
-function loyaltyRedeemPoints() {
-  const m = window._loyaltyMember;
-  if (!m || !m.totalPoints || m.totalPoints < 100) return;
-  // Support both the QR scanner modal card and the inline detail-page card
-  window._loyaltyRedeemCardEl = document.getElementById('loyalty-member-card') ||
-                                 document.getElementById('loyalty-scan-result-detail');
-
-  const TIERS = [
-    { points: 100,  dollar: 1  },
-    { points: 500,  dollar: 5  },
-    { points: 1000, dollar: 10 },
-    { points: 2500, dollar: 25 },
-    { points: 5000, dollar: 50 },
-  ];
-
-  const affordable = TIERS.filter(t => t.points <= m.totalPoints);
-  if (!affordable.length) return;
-
-  // Replace the action area with tier picker
-  const cardEl = window._loyaltyRedeemCardEl;
+  const cardEl = document.getElementById('loyalty-member-card') ||
+                 document.getElementById('loyalty-scan-result-detail');
   if (!cardEl) return;
+  window._loyaltyRedeemCardEl = cardEl;
 
-  const tierLabel = affordable.length === 1
-    ? 'Only 1 tier available with current balance (' + m.totalPoints.toLocaleString() + ' pts):'
-    : 'Select redemption amount:';
+  // Remove any existing picker
+  const existing = document.getElementById('combined-discount-picker');
+  if (existing) existing.remove();
 
-  const tierButtons = affordable.map(t =>
-    `<button class="redeem-tier-btn" data-points="${t.points}" data-dollar="${t.dollar}"
-      style="background:#1a1a1a;border:1px solid #444;color:#ccc;border-radius:6px;padding:10px 14px;
-             font-size:13px;font-weight:600;cursor:pointer;text-align:left;width:100%;margin-bottom:6px;"
-      onmouseover="this.style.borderColor='#f5c518';this.style.color='#f5c518';"
-      onmouseout="if(!this.classList.contains('selected')){this.style.borderColor='#444';this.style.color='#ccc';}">
-      ⭐ ${t.points.toLocaleString()} pts &nbsp;→&nbsp; <strong>$${t.dollar} off</strong>
-    </button>`
+  const TIERS = [
+    { points: 100,  dollar: 1  },
+    { points: 500,  dollar: 5  },
+    { points: 1000, dollar: 10 },
+    { points: 2500, dollar: 25 },
+    { points: 5000, dollar: 50 },
+  ];
+  const affordable = TIERS.filter(t => t.points <= (m.totalPoints || 0));
+  const hasTier    = m.discountPercent > 0;
+  const hasPoints  = affordable.length > 0;
+
+  // Build points options HTML
+  const noneOption = '<option value="0">No points redemption</option>';
+  const ptOptions  = affordable.map(t =>
+    `<option value="${t.points}">${t.points.toLocaleString()} pts → $${t.dollar} off</option>`
   ).join('');
 
-  cardEl.insertAdjacentHTML('beforeend',
-    '<div id="redeem-picker" style="margin-top:10px;">' +
-      '<div style="font-size:12px;color:#888;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Select redemption amount:</div>' +
-      tierButtons +
-      '<div id="redeem-confirm-row" style="display:none;margin-top:10px;">' +
-        '<div id="redeem-confirm-msg" style="font-size:13px;color:#f5c518;margin-bottom:8px;"></div>' +
-        '<div style="display:flex;gap:8px;">' +
-          '<button onclick="confirmRedeemPoints()" ' +
-            'style="flex:1;background:#1a1a0a;border:2px solid #f5c518;color:#f5c518;border-radius:6px;' +
-                   'padding:10px;font-size:13px;font-weight:700;cursor:pointer;">' +
-            '✅ Confirm — Generate Code' +
-          '</button>' +
-          '<button onclick="cancelRedeemPicker()" ' +
-            'style="background:#1a1a1a;border:1px solid #444;color:#888;border-radius:6px;' +
-                   'padding:10px 14px;font-size:13px;cursor:pointer;">' +
-            'Cancel' +
-          '</button>' +
-        '</div>' +
-      '</div>' +
-    '</div>'
-  );
+  cardEl.insertAdjacentHTML('beforeend', `
+    <div id="combined-discount-picker" style="margin-top:12px;background:#111;border:1px solid #f5c518;border-radius:8px;padding:14px;">
+      <div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">Generate Discount Code</div>
 
-  // Attach click handlers after render
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px;color:#aaa;display:block;margin-bottom:4px;">Entry Fee ($)</label>
+        <input type="number" id="cd-entry-fee" min="0" step="0.01" placeholder="e.g. 10.00"
+          style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;color:#fff;
+                 padding:8px 10px;font-size:14px;outline:none;box-sizing:border-box;">
+      </div>
+
+      ${hasPoints ? `
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px;color:#aaa;display:block;margin-bottom:4px;">Points to Redeem</label>
+        <select id="cd-points-select"
+          style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;color:#fff;
+                 padding:8px 10px;font-size:13px;outline:none;box-sizing:border-box;">
+          ${noneOption}${ptOptions}
+        </select>
+      </div>` : ''}
+
+      <div id="cd-preview" style="margin-bottom:10px;font-size:13px;color:#888;min-height:20px;"></div>
+
+      <div style="display:flex;gap:8px;">
+        <button onclick="confirmCombinedDiscount()"
+          style="flex:1;background:#1a1a0a;border:2px solid #f5c518;color:#f5c518;border-radius:6px;
+                 padding:10px;font-size:13px;font-weight:700;cursor:pointer;">
+          ✅ Confirm — Generate Code
+        </button>
+        <button onclick="cancelCombinedDiscount()"
+          style="background:#1a1a1a;border:1px solid #444;color:#888;border-radius:6px;
+                 padding:10px 14px;font-size:13px;cursor:pointer;">
+          Cancel
+        </button>
+      </div>
+    </div>
+  `);
+
+  // Update preview on input change
   setTimeout(() => {
-    document.querySelectorAll('.redeem-tier-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        // Deselect all
-        document.querySelectorAll('.redeem-tier-btn').forEach(b => {
-          b.classList.remove('selected');
-          b.style.borderColor = '#444';
-          b.style.color = '#ccc';
-          b.style.background = '#1a1a1a';
-        });
-        // Select this one
-        btn.classList.add('selected');
-        btn.style.borderColor = '#f5c518';
-        btn.style.color = '#f5c518';
-        btn.style.background = '#1a1a0a';
-
-        window._redeemSelection = {
-          points: parseInt(btn.dataset.points),
-          dollar: parseInt(btn.dataset.dollar)
-        };
-
-        const confirmRow = document.getElementById('redeem-confirm-row');
-        const confirmMsg = document.getElementById('redeem-confirm-msg');
-        if (confirmRow && confirmMsg) {
-          confirmMsg.textContent =
-            'Redeem ' + parseInt(btn.dataset.points).toLocaleString() + ' pts for $' +
-            btn.dataset.dollar + ' off? Customer must verbally approve.';
-          confirmRow.style.display = 'block';
-        }
-      });
-    });
+    const feeEl = document.getElementById('cd-entry-fee');
+    const ptsEl = document.getElementById('cd-points-select');
+    function updatePreview() {
+      const fee      = parseFloat(feeEl ? feeEl.value : 0) || 0;
+      const pts      = parseInt(ptsEl ? ptsEl.value : 0) || 0;
+      const ptsDollar = pts / 100;
+      const tierDollar = hasTier ? Math.floor(fee * (m.discountPercent / 100) * 100) / 100 : 0;
+      const total    = Math.min(ptsDollar + tierDollar, fee > 0 ? fee : 9999);
+      const preview  = document.getElementById('cd-preview');
+      if (!preview) return;
+      if (!fee && !pts) { preview.textContent = 'Enter entry fee to see discount breakdown'; return; }
+      let parts = [];
+      if (tierDollar > 0) parts.push(m.discountPercent + '% tier = $' + tierDollar.toFixed(2));
+      if (ptsDollar  > 0) parts.push(pts.toLocaleString() + ' pts = $' + ptsDollar.toFixed(2));
+      preview.innerHTML =
+        '<div style="background:#1a1a0a;border:1px solid #333;border-radius:6px;padding:10px;">' +
+          (parts.length ? '<div style="color:#aaa;font-size:12px;">' + parts.join(' &nbsp;+&nbsp; ') + '</div>' : '') +
+          '<div style="font-size:18px;font-weight:800;color:#f5c518;margin-top:4px;">Total discount: $' + total.toFixed(2) + ' off</div>' +
+          (pts > 0 ? '<div style="font-size:11px;color:#888;margin-top:2px;">' + pts.toLocaleString() + ' pts will be deducted</div>' : '') +
+        '</div>';
+    }
+    if (feeEl) feeEl.addEventListener('input', updatePreview);
+    if (ptsEl) ptsEl.addEventListener('change', updatePreview);
   }, 0);
 }
 
-function cancelRedeemPicker() {
-  const picker = document.getElementById('redeem-picker');
+function cancelCombinedDiscount() {
+  const picker = document.getElementById('combined-discount-picker');
   if (picker) picker.remove();
-  window._redeemSelection = null;
 }
 
-async function confirmRedeemPoints() {
+async function confirmCombinedDiscount() {
   const m = window._loyaltyMember;
-  const sel = window._redeemSelection;
-  if (!m || !sel) return;
+  if (!m) return;
 
-  const confirmRow = document.getElementById('redeem-confirm-row');
-  const resultEl   = document.getElementById('loyalty-action-result');
-  const confirmBtn = confirmRow && confirmRow.querySelector('button');
+  const feeEl     = document.getElementById('cd-entry-fee');
+  const ptsEl     = document.getElementById('cd-points-select');
+  const resultEl  = document.getElementById('loyalty-action-result');
+  const confirmBtn = document.querySelector('#combined-discount-picker button');
+
+  const fee      = parseFloat(feeEl ? feeEl.value : 0) || 0;
+  const pts      = parseInt(ptsEl ? ptsEl.value : 0) || 0;
+  const ptsDollar  = pts / 100;
+  const tierDollar = m.discountPercent > 0 ? Math.floor(fee * (m.discountPercent / 100) * 100) / 100 : 0;
+  const totalDiscount = Math.round((ptsDollar + tierDollar) * 100) / 100;
+
+  if (totalDiscount < 0.01) {
+    if (resultEl) { resultEl.style.color = '#e03c3c'; resultEl.textContent = 'Enter an entry fee or select points to redeem.'; }
+    return;
+  }
 
   if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Generating...'; }
-  if (resultEl) { resultEl.style.color = '#888'; resultEl.textContent = ''; }
+  if (resultEl)   { resultEl.style.color = '#888'; resultEl.textContent = ''; }
 
   try {
-    const r = await fetch(CC_EVENTS_BASE + '/api/loyalty/redeem', {
+    const r = await fetch(CC_EVENTS_BASE + '/api/loyalty/combined-discount', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         customerId:     m.customerId,
-        pointsToRedeem: sel.points,
+        pointsToRedeem: pts,
+        entryFee:       fee,
+        tierPercent:    m.discountPercent || 0,
         shop:           'cluttered-collectibles-and-comics.myshopify.com'
       })
     });
     const d = await r.json();
 
-    const picker = document.getElementById('redeem-picker');
+    const picker = document.getElementById('combined-discount-picker');
     if (picker) picker.remove();
 
     if (d.success) {
+      // Update cached balance
+      if (pts > 0 && m.totalPoints != null) window._loyaltyMember.totalPoints -= pts;
       if (resultEl) {
         resultEl.style.color = '#f5c518';
+        let breakdown = [];
+        if (d.tierDollar  > 0) breakdown.push(m.discountPercent + '% tier = $' + d.tierDollar.toFixed(2));
+        if (d.ptsDollar   > 0) breakdown.push(d.pointsRedeemed.toLocaleString() + ' pts = $' + d.ptsDollar.toFixed(2));
         resultEl.innerHTML =
           '<div style="background:#1a1a0a;border:1px solid #f5c518;border-radius:8px;padding:14px;margin-top:4px;">' +
             '<div style="font-size:11px;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;">Discount Code — show to customer:</div>' +
             '<div style="font-size:26px;font-weight:800;letter-spacing:4px;color:#f5c518;font-family:monospace;">' + d.code + '</div>' +
-            '<div style="font-size:12px;color:#3cba6f;margin-top:8px;">$' + d.dollarValue + ' off &nbsp;·&nbsp; ' + d.pointsRedeemed.toLocaleString() + ' pts deducted &nbsp;·&nbsp; expires 24 hrs</div>' +
+            '<div style="font-size:12px;color:#3cba6f;margin-top:8px;">$' + d.totalDiscount.toFixed(2) + ' off' +
+              (breakdown.length ? ' &nbsp;·&nbsp; ' + breakdown.join(' + ') : '') +
+              ' &nbsp;·&nbsp; expires 24 hrs</div>' +
+            (d.pointsRedeemed > 0 ? '<div style="font-size:11px;color:#888;margin-top:2px;">' + d.pointsRedeemed.toLocaleString() + ' pts deducted from balance</div>' : '') +
             '<div style="font-size:11px;color:#888;margin-top:4px;">Enter this code in Shopify POS when charging entry fee.</div>' +
           '</div>';
       }
-      // Refresh member balance display
-      if (m.totalPoints != null) {
-        const newBal = m.totalPoints - d.pointsRedeemed;
-        window._loyaltyMember.totalPoints = newBal;
-      }
     } else {
-      if (resultEl) {
-        resultEl.style.color = '#e03c3c';
-        resultEl.textContent = 'Failed: ' + (d.error || 'Unknown error');
-      }
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '✅ Confirm — Generate Code'; }
+      if (resultEl) { resultEl.style.color = '#e03c3c'; resultEl.textContent = 'Failed: ' + (d.error || 'Unknown error'); }
     }
   } catch(e) {
-    if (resultEl) {
-      resultEl.style.color = '#e03c3c';
-      resultEl.textContent = 'Error: ' + e.message;
-    }
+    if (resultEl) { resultEl.style.color = '#e03c3c'; resultEl.textContent = 'Error: ' + e.message; }
   }
 }
 

@@ -75,4 +75,20 @@ router.post('/tier-discount', async (req, res) => {
   }
 });
 
+// POST /api/loyalty/combined-discount — tier % + points in one Shopify code
+router.post('/combined-discount', async (req, res) => {
+  try {
+    const fetch = (await import('node-fetch')).default;
+    const r = await fetch(LOYALTY_URL + '/internal/generate-combined-discount', {
+      method: 'POST',
+      headers: { 'x-internal-secret': LOYALTY_SECRET, 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const text = await r.text();
+    try { res.json(JSON.parse(text)); } catch(e) { res.json({ success: false, error: text }); }
+  } catch(e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
 module.exports = router;
