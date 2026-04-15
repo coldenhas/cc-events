@@ -416,29 +416,25 @@ async function searchForTourney(id, search) {
   const el = document.getElementById('ts-results');
   el.innerHTML = '<div class="text-muted">Searching...</div>';
 
-  const d = await api.get(`/api/loyalty/search?q=${encodeURIComponent(search)}`);
+  const members = await api.get(`/api/loyalty/search?q=${encodeURIComponent(search)}`);
 
-  if (!d || (!d.found && !(d.members && d.members.length))) {
+  if (!members.length) {
     el.innerHTML = '<div class="text-muted">No loyalty members found</div>';
     return;
   }
 
-  const members = d.members || (d.found ? [d] : []);
-
   el.innerHTML = members.slice(0, 8).map(m => {
     const loyBadge = m.tier
-      ? `<span style="font-size:11px;color:#f5c518;margin-left:6px">${m.tierIcon||'\u2B50'} ${m.balance?.toLocaleString()} pts · ${m.tier}</span>`
+      ? `<span style="font-size:11px;color:#f5c518;margin-left:6px">${m.tier.icon||''} ${m.balance?.toLocaleString()} pts · ${m.tier.name}</span>`
       : '';
-    const displayName = `${m.firstName||''} ${m.lastName||''}`.trim() || m.name || 'Member';
-    const pid = m.shopifyCustomerId || m.customerId || m._id;
     return `
     <div class="flex-between" style="padding:6px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px">
       <div>
-        <span style="font-weight:600">${displayName}</span>
+        <span style="font-weight:600">${m.name}</span>
         <span class="text-muted" style="font-size:12px;margin-left:6px">${m.email||''}</span>
         ${loyBadge}
       </div>
-      <button class="btn btn-sm btn-primary" onclick="addLoyaltyMemberToTourney('${id}','${pid}','${displayName.replace(/'/g,"\\'")}','${m.email||''}')">Add</button>
+      <button class="btn btn-sm btn-primary" onclick="addLoyaltyMemberToTourney('${id}','${m._id}','${m.name.replace(/'/g,"\\'")}','${m.email||''}')">Add</button>
     </div>`;
   }).join('');
 }
@@ -465,19 +461,12 @@ async function loadTourneyLoyalty(players) {
 
 async function addLoyaltyMemberToTourney(tid, loyaltyId, name, email) {
   try {
+    // Register directly using loyalty member data
     await api.post(`/api/tournaments/${tid}/players`, { loyaltyId, name, email });
     toast(`${name} added`);
-    // Clear whichever search UI is currently visible (modal vs detail page)
-    const r1 = document.getElementById('ts-results');        if (r1) r1.innerHTML = '';
-    const s1 = document.getElementById('ts-search');         if (s1) s1.value = '';
-    const r2 = document.getElementById('ts-results-detail'); if (r2) r2.innerHTML = '';
-    const s2 = document.getElementById('ts-search-detail');  if (s2) s2.value = '';
-    // Refresh whichever view is active
-    if (document.getElementById('ts-results-detail')) {
-      loadTournamentDetail(tid);
-    } else {
-      openTournamentManager(tid);
-    }
+    document.getElementById('ts-results').innerHTML = '';
+    document.getElementById('ts-search').value = '';
+    openTournamentManager(tid);
   } catch(e) { toast(e.message, 'error'); }
 }
 
@@ -876,19 +865,16 @@ async function searchForTourneyDetail(tid, q) {
       return;
     }
     const members = d.members || (d.found ? [d] : []);
-    resultsEl.innerHTML = members.map(m => {
-      const pid = m.shopifyCustomerId || m.customerId || m._id;
-      const displayName = `${m.firstName||''} ${m.lastName||''}`.trim() || m.name || 'Member';
-      return `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;background:var(--bg2);border-radius:6px;margin-bottom:6px;">
+    resultsEl.innerHTML = members.map(m => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;background:var(--bg2);border-radius:6px;margin-bottom:6px;cursor:pointer;"
+        onclick="addTourneyPlayerDetail('${tid}','${m.shopifyCustomerId||m.customerId}')">
         <div>
-          <span style="font-weight:600">${displayName}</span>
+          <span style="font-weight:600">${m.firstName || 'Member'} ${m.lastName || ''}</span>
           <span style="font-size:11px;color:#888;margin-left:8px;">${m.email || ''}</span>
           <span style="font-size:11px;color:#f5c518;margin-left:8px;">${m.tierIcon || '⭐'} ${m.tier || 'Base'}</span>
         </div>
-        <button class="btn btn-sm btn-primary" onclick="addLoyaltyMemberToTourney('${tid}','${pid}','${displayName.replace(/'/g,"\\'")}','${m.email||''}')">Add</button>
-      </div>`;
-    }).join('');
+        <button class="btn btn-sm btn-primary">Add</button>
+      </div>`).join('');
   } catch(e) { console.error(e); }
 }
 
@@ -1296,40 +1282,152 @@ function loyaltyApplyDiscount() {
   resultEl.textContent = '✓ ' + m.discountPercent + '% discount noted for ' + (m.firstName||'Member') + '. Apply manually to entry fee collection.';
 }
 
-async function loyaltyRedeemPoints() {
+function loyaltyRedeemPoints() {
   const m = window._loyaltyMember;
   if (!m || !m.totalPoints || m.totalPoints < 100) return;
-  const resultEl = document.getElementById('loyalty-action-result');
-  resultEl.style.color = '#888';
-  resultEl.textContent = 'Generating discount code...';
+
+  const TIERS = [
+    { points: 100,  dollar: 1  },
+    { points: 500,  dollar: 5  },
+    { points: 1000, dollar: 10 },
+    { points: 2500, dollar: 25 },
+    { points: 5000, dollar: 50 },
+  ];
+
+  const affordable = TIERS.filter(t => t.points <= m.totalPoints);
+  if (!affordable.length) return;
+
+  // Replace the action area with tier picker
+  const cardEl = document.getElementById('loyalty-member-card');
+  if (!cardEl) return;
+
+  const tierButtons = affordable.map(t =>
+    `<button class="redeem-tier-btn" data-points="${t.points}" data-dollar="${t.dollar}"
+      style="background:#1a1a1a;border:1px solid #444;color:#ccc;border-radius:6px;padding:10px 14px;
+             font-size:13px;font-weight:600;cursor:pointer;text-align:left;width:100%;margin-bottom:6px;"
+      onmouseover="this.style.borderColor='#f5c518';this.style.color='#f5c518';"
+      onmouseout="if(!this.classList.contains('selected')){this.style.borderColor='#444';this.style.color='#ccc';}">
+      ⭐ ${t.points.toLocaleString()} pts &nbsp;→&nbsp; <strong>$${t.dollar} off</strong>
+    </button>`
+  ).join('');
+
+  cardEl.insertAdjacentHTML('beforeend',
+    '<div id="redeem-picker" style="margin-top:10px;">' +
+      '<div style="font-size:12px;color:#888;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Select redemption amount:</div>' +
+      tierButtons +
+      '<div id="redeem-confirm-row" style="display:none;margin-top:10px;">' +
+        '<div id="redeem-confirm-msg" style="font-size:13px;color:#f5c518;margin-bottom:8px;"></div>' +
+        '<div style="display:flex;gap:8px;">' +
+          '<button onclick="confirmRedeemPoints()" ' +
+            'style="flex:1;background:#1a1a0a;border:2px solid #f5c518;color:#f5c518;border-radius:6px;' +
+                   'padding:10px;font-size:13px;font-weight:700;cursor:pointer;">' +
+            '✅ Confirm — Generate Code' +
+          '</button>' +
+          '<button onclick="cancelRedeemPicker()" ' +
+            'style="background:#1a1a1a;border:1px solid #444;color:#888;border-radius:6px;' +
+                   'padding:10px 14px;font-size:13px;cursor:pointer;">' +
+            'Cancel' +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>'
+  );
+
+  // Attach click handlers after render
+  setTimeout(() => {
+    document.querySelectorAll('.redeem-tier-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        // Deselect all
+        document.querySelectorAll('.redeem-tier-btn').forEach(b => {
+          b.classList.remove('selected');
+          b.style.borderColor = '#444';
+          b.style.color = '#ccc';
+          b.style.background = '#1a1a1a';
+        });
+        // Select this one
+        btn.classList.add('selected');
+        btn.style.borderColor = '#f5c518';
+        btn.style.color = '#f5c518';
+        btn.style.background = '#1a1a0a';
+
+        window._redeemSelection = {
+          points: parseInt(btn.dataset.points),
+          dollar: parseInt(btn.dataset.dollar)
+        };
+
+        const confirmRow = document.getElementById('redeem-confirm-row');
+        const confirmMsg = document.getElementById('redeem-confirm-msg');
+        if (confirmRow && confirmMsg) {
+          confirmMsg.textContent =
+            'Redeem ' + parseInt(btn.dataset.points).toLocaleString() + ' pts for $' +
+            btn.dataset.dollar + ' off? Customer must verbally approve.';
+          confirmRow.style.display = 'block';
+        }
+      });
+    });
+  }, 0);
+}
+
+function cancelRedeemPicker() {
+  const picker = document.getElementById('redeem-picker');
+  if (picker) picker.remove();
+  window._redeemSelection = null;
+}
+
+async function confirmRedeemPoints() {
+  const m = window._loyaltyMember;
+  const sel = window._redeemSelection;
+  if (!m || !sel) return;
+
+  const confirmRow = document.getElementById('redeem-confirm-row');
+  const resultEl   = document.getElementById('loyalty-action-result');
+  const confirmBtn = confirmRow && confirmRow.querySelector('button');
+
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Generating...'; }
+  if (resultEl) { resultEl.style.color = '#888'; resultEl.textContent = ''; }
 
   try {
     const r = await fetch(CC_EVENTS_BASE + '/api/loyalty/redeem', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        customerId: m.customerId,
-        pointsToRedeem: m.totalPoints,
-        shop: 'cluttered-collectibles-and-comics.myshopify.com'
+        customerId:     m.customerId,
+        pointsToRedeem: sel.points,
+        shop:           'cluttered-collectibles-and-comics.myshopify.com'
       })
     });
     const d = await r.json();
+
+    const picker = document.getElementById('redeem-picker');
+    if (picker) picker.remove();
+
     if (d.success) {
-      resultEl.style.color = '#f5c518';
-      resultEl.innerHTML =
-        '<div style="background:#1a1a0a;border:1px solid #f5c518;border-radius:8px;padding:12px;margin-top:4px;">' +
-          '<div style="font-size:11px;color:#888;margin-bottom:4px;">DISCOUNT CODE — show to customer:</div>' +
-          '<div style="font-size:22px;font-weight:800;letter-spacing:3px;color:#f5c518;font-family:monospace;">' + d.code + '</div>' +
-          '<div style="font-size:12px;color:#3cba6f;margin-top:6px;">$' + d.dollarValue + ' off · ' + d.pointsRedeemed + ' pts deducted · expires 24hrs</div>' +
-          '<div style="font-size:11px;color:#888;margin-top:4px;">Enter this code in Shopify POS when charging entry fee.</div>' +
-        '</div>';
+      if (resultEl) {
+        resultEl.style.color = '#f5c518';
+        resultEl.innerHTML =
+          '<div style="background:#1a1a0a;border:1px solid #f5c518;border-radius:8px;padding:14px;margin-top:4px;">' +
+            '<div style="font-size:11px;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;">Discount Code — show to customer:</div>' +
+            '<div style="font-size:26px;font-weight:800;letter-spacing:4px;color:#f5c518;font-family:monospace;">' + d.code + '</div>' +
+            '<div style="font-size:12px;color:#3cba6f;margin-top:8px;">$' + d.dollarValue + ' off &nbsp;·&nbsp; ' + d.pointsRedeemed.toLocaleString() + ' pts deducted &nbsp;·&nbsp; expires 24 hrs</div>' +
+            '<div style="font-size:11px;color:#888;margin-top:4px;">Enter this code in Shopify POS when charging entry fee.</div>' +
+          '</div>';
+      }
+      // Refresh member balance display
+      if (m.totalPoints != null) {
+        const newBal = m.totalPoints - d.pointsRedeemed;
+        window._loyaltyMember.totalPoints = newBal;
+      }
     } else {
-      resultEl.style.color = '#e03c3c';
-      resultEl.textContent = 'Failed: ' + (d.error || 'Unknown error');
+      if (resultEl) {
+        resultEl.style.color = '#e03c3c';
+        resultEl.textContent = 'Failed: ' + (d.error || 'Unknown error');
+      }
     }
   } catch(e) {
-    resultEl.style.color = '#e03c3c';
-    resultEl.textContent = 'Error: ' + e.message;
+    if (resultEl) {
+      resultEl.style.color = '#e03c3c';
+      resultEl.textContent = 'Error: ' + e.message;
+    }
   }
 }
 
