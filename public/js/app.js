@@ -1368,12 +1368,43 @@ function loyaltyRegisterPlayer() {
   });
 }
 
-function loyaltyApplyDiscount() {
+async function loyaltyApplyDiscount() {
   const m = window._loyaltyMember;
-  if (!m) return;
+  if (!m || !m.discountPercent) return;
+
   const resultEl = document.getElementById('loyalty-action-result');
-  resultEl.style.color = '#4a9eff';
-  resultEl.textContent = '✓ ' + m.discountPercent + '% discount noted for ' + (m.firstName||'Member') + '. Apply manually to entry fee collection.';
+  if (!resultEl) return;
+  resultEl.style.color = '#888';
+  resultEl.textContent = 'Generating tier discount code...';
+
+  try {
+    const r = await fetch(CC_EVENTS_BASE + '/api/loyalty/tier-discount', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerId:      m.customerId,
+        discountPercent: m.discountPercent,
+        shop:            'cluttered-collectibles-and-comics.myshopify.com'
+      })
+    });
+    const d = await r.json();
+    if (d.success) {
+      resultEl.style.color = '#4a9eff';
+      resultEl.innerHTML =
+        '<div style="background:#0a0a1a;border:1px solid #4a9eff;border-radius:8px;padding:14px;margin-top:4px;">' +
+          '<div style="font-size:11px;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;">' + d.tierName + ' Discount Code — show to customer:</div>' +
+          '<div style="font-size:26px;font-weight:800;letter-spacing:4px;color:#4a9eff;font-family:monospace;">' + d.code + '</div>' +
+          '<div style="font-size:12px;color:#3cba6f;margin-top:8px;">' + d.discountPercent + '% off · no points deducted · expires 24 hrs</div>' +
+          '<div style="font-size:11px;color:#888;margin-top:4px;">Enter this code in Shopify POS when charging entry fee.</div>' +
+        '</div>';
+    } else {
+      resultEl.style.color = '#e03c3c';
+      resultEl.textContent = 'Failed: ' + (d.error || 'Unknown error');
+    }
+  } catch(e) {
+    resultEl.style.color = '#e03c3c';
+    resultEl.textContent = 'Error: ' + e.message;
+  }
 }
 
 function loyaltyRedeemPoints() {
@@ -1397,6 +1428,10 @@ function loyaltyRedeemPoints() {
   // Replace the action area with tier picker
   const cardEl = window._loyaltyRedeemCardEl;
   if (!cardEl) return;
+
+  const tierLabel = affordable.length === 1
+    ? 'Only 1 tier available with current balance (' + m.totalPoints.toLocaleString() + ' pts):'
+    : 'Select redemption amount:';
 
   const tierButtons = affordable.map(t =>
     `<button class="redeem-tier-btn" data-points="${t.points}" data-dollar="${t.dollar}"

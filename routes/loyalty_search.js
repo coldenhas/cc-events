@@ -59,4 +59,20 @@ router.post('/redeem', async (req, res) => {
   }
 });
 
+// POST /api/loyalty/tier-discount — proxies to loyalty app for % tier discount code (no points deducted)
+router.post('/tier-discount', async (req, res) => {
+  try {
+    const fetch = (await import('node-fetch')).default;
+    const r = await fetch(LOYALTY_URL + '/internal/generate-tier-discount', {
+      method: 'POST',
+      headers: { 'x-internal-secret': LOYALTY_SECRET, 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const text = await r.text();
+    try { res.json(JSON.parse(text)); } catch(e) { res.json({ success: false, error: text }); }
+  } catch(e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
 module.exports = router;
