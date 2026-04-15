@@ -939,9 +939,12 @@ function showLoyaltyMemberCardInline(d) {
     ? '<span style="display:inline-block;padding:3px 8px;background:rgba(60,186,111,0.15);border:1px solid rgba(60,186,111,0.3);border-radius:4px;font-size:11px;font-weight:700;color:#3cba6f;">' + d.discountPercent + '% tier discount available</span>'
     : '<span style="font-size:11px;color:#888;">No tier discount (Base)</span>';
 
-  const pointsRedeemable = d.pointsValue > 0
-    ? '<span style="font-size:11px;color:#f5c518;">$' + d.pointsValue + ' redeemable from points</span>'
-    : '<span style="font-size:11px;color:#888;">No points to redeem yet</span>';
+  const _maxDollar = maxRedeemDollar(d.totalPoints || 0);
+  const pointsRedeemable = _maxDollar > 0
+    ? '<span style="font-size:11px;color:#f5c518;">up to $' + _maxDollar + ' redeemable (select amount below)</span>'
+    : (d.totalPoints >= 100
+        ? '<span style="font-size:11px;color:#f5c518;">$' + Math.floor((d.totalPoints||0)/100) + ' redeemable from points</span>'
+        : '<span style="font-size:11px;color:#888;">No points to redeem yet (need 100 pts min)</span>');
 
   slot.style.display = 'block';
   slot.innerHTML =
@@ -965,7 +968,7 @@ function showLoyaltyMemberCardInline(d) {
       (d.pointsValue > 0
         ? '<button onclick="loyaltyRedeemPoints()" ' +
             'style="background:#1a1a1a;border:1px solid #f5c518;color:#f5c518;border-radius:6px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;">' +
-            '⭐ Redeem points — $' + d.pointsValue + ' off entry (customer must approve)' +
+            '⭐ Redeem points — up to $' + _maxDollar + ' off (select amount, customer must approve)' +
           '</button>'
         : '') +
     '</div>' +
@@ -1292,9 +1295,12 @@ function showLoyaltyMemberCard(d) {
     ? '<span style="display:inline-block;padding:3px 8px;background:rgba(60,186,111,0.15);border:1px solid rgba(60,186,111,0.3);border-radius:4px;font-size:11px;font-weight:700;color:#3cba6f;">' + d.discountPercent + '% tier discount available</span>'
     : '<span style="font-size:11px;color:#888;">No tier discount (Base)</span>';
 
-  const pointsRedeemable = d.pointsValue > 0
-    ? '<span style="font-size:11px;color:#f5c518;">$' + d.pointsValue + ' redeemable from points</span>'
-    : '<span style="font-size:11px;color:#888;">No points to redeem yet</span>';
+  const _maxDollar = maxRedeemDollar(d.totalPoints || 0);
+  const pointsRedeemable = _maxDollar > 0
+    ? '<span style="font-size:11px;color:#f5c518;">up to $' + _maxDollar + ' redeemable (select amount below)</span>'
+    : (d.totalPoints >= 100
+        ? '<span style="font-size:11px;color:#f5c518;">$' + Math.floor((d.totalPoints||0)/100) + ' redeemable from points</span>'
+        : '<span style="font-size:11px;color:#888;">No points to redeem yet (need 100 pts min)</span>');
 
   cardEl.style.display = 'block';
   cardEl.innerHTML =
@@ -1332,7 +1338,7 @@ function showLoyaltyMemberCard(d) {
         ? '<button onclick="loyaltyRedeemPoints()" ' +
             'style="background:#1a1a1a;border:1px solid #f5c518;color:#f5c518;border-radius:6px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;" ' +
             'title="Ask customer to confirm before redeeming">' +
-            '⭐ Redeem points — $' + d.pointsValue + ' off entry (customer must approve)' +
+            '⭐ Redeem points — up to $' + _maxDollar + ' off (select amount, customer must approve)' +
           '</button>'
         : '') +
 
@@ -1407,6 +1413,20 @@ async function loyaltyApplyDiscount() {
   }
 }
 
+
+// Returns the max dollar value redeemable given a points balance, based on available tiers
+function maxRedeemDollar(totalPoints) {
+  const TIERS = [
+    { points: 100,  dollar: 1  },
+    { points: 500,  dollar: 5  },
+    { points: 1000, dollar: 10 },
+    { points: 2500, dollar: 25 },
+    { points: 5000, dollar: 50 },
+  ];
+  const affordable = TIERS.filter(t => t.points <= totalPoints);
+  if (!affordable.length) return 0;
+  return affordable[affordable.length - 1].dollar;
+}
 function loyaltyRedeemPoints() {
   const m = window._loyaltyMember;
   if (!m || !m.totalPoints || m.totalPoints < 100) return;
