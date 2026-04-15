@@ -416,7 +416,10 @@ async function searchForTourney(id, search) {
   const el = document.getElementById('ts-results');
   el.innerHTML = '<div class="text-muted">Searching...</div>';
 
-  const members = await api.get(`/api/loyalty/search?q=${encodeURIComponent(search)}`);
+  const d = await api.get(`/api/loyalty/search?q=${encodeURIComponent(search)}`);
+
+  // Route returns { found, members:[...], ...memberData } — normalise to array
+  const members = d.members || (d.found ? [d] : []);
 
   if (!members.length) {
     el.innerHTML = '<div class="text-muted">No loyalty members found</div>';
@@ -424,17 +427,22 @@ async function searchForTourney(id, search) {
   }
 
   el.innerHTML = members.slice(0, 8).map(m => {
-    const loyBadge = m.tier
-      ? `<span style="font-size:11px;color:#f5c518;margin-left:6px">${m.tier.icon||''} ${m.balance?.toLocaleString()} pts · ${m.tier.name}</span>`
-      : '';
+    const name      = ((m.firstName || m.name || 'Member') + ' ' + (m.lastName || '')).trim();
+    const tierLabel = m.tier || 'Base';
+    const tierIcon  = m.tierIcon || '⭐';
+    const pts       = (m.totalPoints || m.balance || 0).toLocaleString();
+    const loyBadge  = `<span style="font-size:11px;color:#f5c518;margin-left:6px">${tierIcon} ${pts} pts · ${tierLabel}</span>`;
+    const safeId    = m.shopifyCustomerId || m.customerId || m._id || '';
+    const safeName  = name.replace(/'/g, "\'");
+    const safeEmail = (m.email || '').replace(/'/g, "\'");
     return `
     <div class="flex-between" style="padding:6px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px">
       <div>
-        <span style="font-weight:600">${m.name}</span>
+        <span style="font-weight:600">${name}</span>
         <span class="text-muted" style="font-size:12px;margin-left:6px">${m.email||''}</span>
         ${loyBadge}
       </div>
-      <button class="btn btn-sm btn-primary" onclick="addLoyaltyMemberToTourney('${id}','${m._id}','${m.name.replace(/'/g,"\\'")}','${m.email||''}')">Add</button>
+      <button class="btn btn-sm btn-primary" onclick="addLoyaltyMemberToTourney('${id}','${safeId}','${safeName}','${safeEmail}')">Add</button>
     </div>`;
   }).join('');
 }

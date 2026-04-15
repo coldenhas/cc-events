@@ -43,8 +43,6 @@ router.get('/search', async (req, res) => {
   }
 });
 
-module.exports = router;
-
 // POST /api/loyalty/redeem — proxies to loyalty app to generate discount code
 router.post('/redeem', async (req, res) => {
   try {
@@ -60,3 +58,5 @@ router.post('/redeem', async (req, res) => {
     res.json({ success: false, error: e.message });
   }
 });
+
+module.exports = router;
