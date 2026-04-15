@@ -1249,26 +1249,29 @@ function showLoyaltyMemberCard(d) {
 function loyaltyRegisterPlayer() {
   const m = window._loyaltyMember;
   if (!m || !loyaltyScanTourneyId) return;
-  // Look up by email to find their player record
-  api.get('/api/loyalty/search?q=' + encodeURIComponent(m.email || m.firstName))
-    .then(d => {
-      if (d.found) {
-        const pid = d.shopifyCustomerId || d.customerId;
-        return api.post('/api/tournaments/' + loyaltyScanTourneyId + '/players', { playerId: pid });
-      }
-      throw new Error('Could not find player record');
-    })
-    .then(() => {
-      document.getElementById('loyalty-action-result').textContent = '✓ ' + (m.firstName||'Member') + ' registered!';
-      document.getElementById('loyalty-action-result').style.color = '#3cba6f';
-      toast((m.firstName||'Member') + ' registered for tournament');
-      // Reload the tournament detail
-      setTimeout(() => { closeModal(); loadTournamentDetail(loyaltyScanTourneyId); }, 1000);
-    })
-    .catch(e => {
-      document.getElementById('loyalty-action-result').textContent = '✗ ' + e.message;
-      document.getElementById('loyalty-action-result').style.color = '#e03c3c';
-    });
+  const resultEl = document.getElementById('loyalty-action-result');
+  // Use shopifyCustomerId directly — that's what tournaments use as playerId
+  const playerId = m.shopifyCustomerId || m.customerId;
+  if (!playerId) {
+    resultEl.textContent = '✗ No player ID found';
+    resultEl.style.color = '#e03c3c';
+    return;
+  }
+  api.post('/api/tournaments/' + loyaltyScanTourneyId + '/players', {
+    playerId: playerId,
+    name: ((m.firstName||'') + ' ' + (m.lastName||'')).trim(),
+    email: m.email || ''
+  })
+  .then(() => {
+    resultEl.textContent = '✓ ' + (m.firstName||'Member') + ' registered!';
+    resultEl.style.color = '#3cba6f';
+    toast((m.firstName||'Member') + ' registered for tournament');
+    setTimeout(() => { closeModal(); loadTournamentDetail(loyaltyScanTourneyId); }, 1000);
+  })
+  .catch(e => {
+    resultEl.textContent = '✗ ' + e.message;
+    resultEl.style.color = '#e03c3c';
+  });
 }
 
 function loyaltyApplyDiscount() {
@@ -1279,12 +1282,41 @@ function loyaltyApplyDiscount() {
   resultEl.textContent = '✓ ' + m.discountPercent + '% discount noted for ' + (m.firstName||'Member') + '. Apply manually to entry fee collection.';
 }
 
-function loyaltyRedeemPoints() {
+async function loyaltyRedeemPoints() {
   const m = window._loyaltyMember;
-  if (!m) return;
+  if (!m || !m.totalPoints || m.totalPoints < 100) return;
   const resultEl = document.getElementById('loyalty-action-result');
-  resultEl.style.color = '#f5c518';
-  resultEl.textContent = '✓ Points redemption noted — $' + m.pointsValue + ' off. Remind customer to redeem at clutteredcollectibles.com/apps/loyalty after the event.';
+  resultEl.style.color = '#888';
+  resultEl.textContent = 'Generating discount code...';
+
+  try {
+    const r = await fetch(CC_EVENTS_BASE + '/api/loyalty/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerId: m.customerId,
+        pointsToRedeem: m.totalPoints,
+        shop: 'cluttered-collectibles-and-comics.myshopify.com'
+      })
+    });
+    const d = await r.json();
+    if (d.success) {
+      resultEl.style.color = '#f5c518';
+      resultEl.innerHTML =
+        '<div style="background:#1a1a0a;border:1px solid #f5c518;border-radius:8px;padding:12px;margin-top:4px;">' +
+          '<div style="font-size:11px;color:#888;margin-bottom:4px;">DISCOUNT CODE — show to customer:</div>' +
+          '<div style="font-size:22px;font-weight:800;letter-spacing:3px;color:#f5c518;font-family:monospace;">' + d.code + '</div>' +
+          '<div style="font-size:12px;color:#3cba6f;margin-top:6px;">$' + d.dollarValue + ' off · ' + d.pointsRedeemed + ' pts deducted · expires 24hrs</div>' +
+          '<div style="font-size:11px;color:#888;margin-top:4px;">Enter this code in Shopify POS when charging entry fee.</div>' +
+        '</div>';
+    } else {
+      resultEl.style.color = '#e03c3c';
+      resultEl.textContent = 'Failed: ' + (d.error || 'Unknown error');
+    }
+  } catch(e) {
+    resultEl.style.color = '#e03c3c';
+    resultEl.textContent = 'Error: ' + e.message;
+  }
 }
 
 const _origCloseForScan = closeModal;

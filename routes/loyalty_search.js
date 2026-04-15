@@ -44,3 +44,19 @@ router.get('/search', async (req, res) => {
 });
 
 module.exports = router;
+
+// POST /api/loyalty/redeem — proxies to loyalty app to generate discount code
+router.post('/redeem', async (req, res) => {
+  try {
+    const fetch = (await import('node-fetch')).default;
+    const r = await fetch(LOYALTY_URL + '/internal/generate-discount', {
+      method: 'POST',
+      headers: { 'x-internal-secret': LOYALTY_SECRET, 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const text = await r.text();
+    try { res.json(JSON.parse(text)); } catch(e) { res.json({ success: false, error: text }); }
+  } catch(e) {
+    res.json({ success: false, error: e.message });
+  }
+});
