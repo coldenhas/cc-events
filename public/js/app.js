@@ -465,12 +465,19 @@ async function loadTourneyLoyalty(players) {
 
 async function addLoyaltyMemberToTourney(tid, loyaltyId, name, email) {
   try {
-    // Register directly using loyalty member data
     await api.post(`/api/tournaments/${tid}/players`, { loyaltyId, name, email });
     toast(`${name} added`);
-    document.getElementById('ts-results').innerHTML = '';
-    document.getElementById('ts-search').value = '';
-    openTournamentManager(tid);
+    // Clear whichever search UI is currently visible (modal vs detail page)
+    const r1 = document.getElementById('ts-results');        if (r1) r1.innerHTML = '';
+    const s1 = document.getElementById('ts-search');         if (s1) s1.value = '';
+    const r2 = document.getElementById('ts-results-detail'); if (r2) r2.innerHTML = '';
+    const s2 = document.getElementById('ts-search-detail');  if (s2) s2.value = '';
+    // Refresh whichever view is active
+    if (document.getElementById('ts-results-detail')) {
+      loadTournamentDetail(tid);
+    } else {
+      openTournamentManager(tid);
+    }
   } catch(e) { toast(e.message, 'error'); }
 }
 
