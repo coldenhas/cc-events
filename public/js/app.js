@@ -416,25 +416,29 @@ async function searchForTourney(id, search) {
   const el = document.getElementById('ts-results');
   el.innerHTML = '<div class="text-muted">Searching...</div>';
 
-  const members = await api.get(`/api/loyalty/search?q=${encodeURIComponent(search)}`);
+  const d = await api.get(`/api/loyalty/search?q=${encodeURIComponent(search)}`);
 
-  if (!members.length) {
+  if (!d || (!d.found && !(d.members && d.members.length))) {
     el.innerHTML = '<div class="text-muted">No loyalty members found</div>';
     return;
   }
 
+  const members = d.members || (d.found ? [d] : []);
+
   el.innerHTML = members.slice(0, 8).map(m => {
     const loyBadge = m.tier
-      ? `<span style="font-size:11px;color:#f5c518;margin-left:6px">${m.tier.icon||''} ${m.balance?.toLocaleString()} pts · ${m.tier.name}</span>`
+      ? `<span style="font-size:11px;color:#f5c518;margin-left:6px">${m.tierIcon||'\u2B50'} ${m.balance?.toLocaleString()} pts · ${m.tier}</span>`
       : '';
+    const displayName = `${m.firstName||''} ${m.lastName||''}`.trim() || m.name || 'Member';
+    const pid = m.shopifyCustomerId || m.customerId || m._id;
     return `
     <div class="flex-between" style="padding:6px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px">
       <div>
-        <span style="font-weight:600">${m.name}</span>
+        <span style="font-weight:600">${displayName}</span>
         <span class="text-muted" style="font-size:12px;margin-left:6px">${m.email||''}</span>
         ${loyBadge}
       </div>
-      <button class="btn btn-sm btn-primary" onclick="addLoyaltyMemberToTourney('${id}','${m._id}','${m.name.replace(/'/g,"\\'")}','${m.email||''}')">Add</button>
+      <button class="btn btn-sm btn-primary" onclick="addLoyaltyMemberToTourney('${id}','${pid}','${displayName.replace(/'/g,"\\'")}','${m.email||''}')">Add</button>
     </div>`;
   }).join('');
 }
