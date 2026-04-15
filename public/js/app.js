@@ -848,11 +848,11 @@ async function loadTournamentDetail(id) {
       });
     }
 
-    // Re-inject loyalty member card if staff had one loaded before the page reloaded
-    if (window._loyaltyMember && window._loyaltyMember.found) {
+    // Re-inject loyalty member card only if this was a navigation reload,
+    // not triggered by Add (in that case addLoyaltyMemberToTourney handles the card itself)
+    if (window._loyaltyMember && window._loyaltyMember.found && !window._pendingTourneyReload) {
       showLoyaltyMemberCardInline(window._loyaltyMember);
     }
-    // Clear pending reload flag — page has now fully reloaded
     window._pendingTourneyReload = null;
   }, 100);
 }
@@ -1317,6 +1317,20 @@ async function lookupLoyaltyManual() {
     const s = document.getElementById('loyalty-scan-status');
     if (s) s.textContent = 'Not found';
   }
+}
+
+// Returns the highest affordable redemption tier dollar value
+function maxRedeemDollar(totalPoints) {
+  const TIERS = [
+    { points: 100,  dollar: 1  },
+    { points: 500,  dollar: 5  },
+    { points: 1000, dollar: 10 },
+    { points: 2500, dollar: 25 },
+    { points: 5000, dollar: 50 },
+  ];
+  const affordable = TIERS.filter(t => t.points <= totalPoints);
+  if (!affordable.length) return 0;
+  return affordable[affordable.length - 1].dollar;
 }
 
 function showLoyaltyMemberCard(d) {
