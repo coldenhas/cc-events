@@ -488,21 +488,35 @@ async function addLoyaltyMemberToTourney(tid, loyaltyId, name, email) {
     // (full reload happens when staff is done and navigates away or clicks Back)
     window._pendingTourneyReload = tid;
 
-    // If member card is showing, swap Add button to a "✓ Registered" badge
-    const slot = document.getElementById('loyalty-scan-result-detail') ||
-                 document.getElementById('loyalty-member-card');
+    // Show registered badge + re-render member card so discount flow is still accessible
+    const scanSlot = document.getElementById('loyalty-scan-result-detail');
+    const modalSlot = document.getElementById('loyalty-member-card');
+
+    // Insert registered badge before whichever slot exists
+    const slot = scanSlot || modalSlot;
     if (slot) {
-      // Replace Add button in result rows (already cleared above)
-      // Add a registered badge above the member card
       const existing = document.getElementById('loyalty-registered-badge');
       if (!existing) {
         slot.insertAdjacentHTML('beforebegin',
           '<div id="loyalty-registered-badge" ' +
             'style="background:#1a3a1a;border:1px solid #3cba6f;border-radius:6px;padding:8px 12px;' +
-                   'font-size:13px;color:#3cba6f;font-weight:600;margin-bottom:8px;">'+
+                   'font-size:13px;color:#3cba6f;font-weight:600;margin-bottom:8px;">' +
             '✓ ' + name + ' registered — generate a discount code below if needed' +
           '</div>'
         );
+      }
+    }
+
+    // Always re-render the member card after Add so discount button is visible
+    if (window._loyaltyMember && window._loyaltyMember.found) {
+      if (scanSlot !== null) {
+        showLoyaltyMemberCardInline(window._loyaltyMember);
+      } else if (modalSlot !== null) {
+        showLoyaltyMemberCard(window._loyaltyMember);
+      } else {
+        // Slot may not exist yet if search results were just cleared — force show inline
+        // by triggering after a tick so the DOM has settled
+        setTimeout(() => showLoyaltyMemberCardInline(window._loyaltyMember), 50);
       }
     }
   } catch(e) { toast(e.message, 'error'); }
@@ -908,6 +922,11 @@ async function addTourneyPlayerDetail(tid, pid) {
 }
 
 async function searchForTourneyDetail(tid, q) {
+  // Clear registered badge and member card when starting a new search
+  const oldBadge = document.getElementById('loyalty-registered-badge');
+  if (oldBadge) oldBadge.remove();
+  window._loyaltyMember = null;
+
   if (!q || q.length < 2) {
     document.getElementById('ts-results-detail').innerHTML = '';
     const scanSlot = document.getElementById('loyalty-scan-result-detail');
