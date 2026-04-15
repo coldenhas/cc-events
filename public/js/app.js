@@ -869,7 +869,7 @@ async function searchForTourneyDetail(tid, q) {
       <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;background:var(--bg2);border-radius:6px;margin-bottom:6px;cursor:pointer;"
         onclick="addTourneyPlayerDetail('${tid}','${m.shopifyCustomerId||m.customerId}')">
         <div>
-          <span style="font-weight:600">${m.firstName || 'Member'}</span>
+          <span style="font-weight:600">${m.firstName || 'Member'} ${m.lastName || ''}</span>
           <span style="font-size:11px;color:#888;margin-left:8px;">${m.email || ''}</span>
           <span style="font-size:11px;color:#f5c518;margin-left:8px;">${m.tierIcon || '⭐'} ${m.tier || 'Base'}</span>
         </div>
