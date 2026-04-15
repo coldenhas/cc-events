@@ -876,13 +876,20 @@ async function addTourneyPlayerDetail(tid, pid) {
 }
 
 async function searchForTourneyDetail(tid, q) {
-  if (!q || q.length < 2) { document.getElementById('ts-results-detail').innerHTML = ''; return; }
+  if (!q || q.length < 2) {
+    document.getElementById('ts-results-detail').innerHTML = '';
+    const scanSlot = document.getElementById('loyalty-scan-result-detail');
+    if (scanSlot) { scanSlot.style.display = 'none'; scanSlot.innerHTML = ''; }
+    return;
+  }
   try {
     const d = await api.get(`/api/loyalty/search?q=${encodeURIComponent(q)}`);
     const resultsEl = document.getElementById('ts-results-detail');
     if (!resultsEl) return;
     if (!d || (!d.found && !(d.members && d.members.length))) {
       resultsEl.innerHTML = '<div style="color:#888;font-size:13px;padding:8px 0;">No loyalty members found</div>';
+      const scanSlot = document.getElementById('loyalty-scan-result-detail');
+      if (scanSlot) { scanSlot.style.display = 'none'; scanSlot.innerHTML = ''; }
       return;
     }
     const members = d.members || (d.found ? [d] : []);
@@ -902,7 +909,59 @@ async function searchForTourneyDetail(tid, q) {
           onclick="addLoyaltyMemberToTourney('${tid}','${mId}','${safeMName}','${safeMEmail}')">Add</button>
       </div>`;
     }).join('');
+
+    // Show full member card with Redeem button below search results
+    // Uses the first member found (typically only one returned by email/phone search)
+    if (members.length > 0) {
+      showLoyaltyMemberCardInline(members[0]);
+    }
   } catch(e) { console.error(e); }
+}
+
+// Renders the loyalty member card + Redeem button into the detail page's scan slot
+// (mirrors showLoyaltyMemberCard but targets loyalty-scan-result-detail instead of loyalty-member-card)
+function showLoyaltyMemberCardInline(d) {
+  const slot = document.getElementById('loyalty-scan-result-detail');
+  if (!slot) return;
+  if (!d || !d.found) { slot.style.display = 'none'; slot.innerHTML = ''; return; }
+
+  window._loyaltyMember = d;
+
+  const discountBadge = d.discountPercent > 0
+    ? '<span style="display:inline-block;padding:3px 8px;background:rgba(60,186,111,0.15);border:1px solid rgba(60,186,111,0.3);border-radius:4px;font-size:11px;font-weight:700;color:#3cba6f;">' + d.discountPercent + '% tier discount available</span>'
+    : '<span style="font-size:11px;color:#888;">No tier discount (Base)</span>';
+
+  const pointsRedeemable = d.pointsValue > 0
+    ? '<span style="font-size:11px;color:#f5c518;">$' + d.pointsValue + ' redeemable from points</span>'
+    : '<span style="font-size:11px;color:#888;">No points to redeem yet</span>';
+
+  slot.style.display = 'block';
+  slot.innerHTML =
+    '<div style="background:#1a1a1a;border:1px solid #f5c518;border-radius:8px;padding:14px;display:flex;align-items:center;gap:14px;margin-bottom:10px;">' +
+      '<div style="font-size:32px;">' + (d.tierIcon||'⭐') + '</div>' +
+      '<div style="flex:1;">' +
+        '<div style="font-size:15px;font-weight:700;color:#fff;">' + (d.firstName||'Member') + (d.lastName ? ' ' + d.lastName : '') + '</div>' +
+        '<div style="font-size:12px;color:#888;margin-top:2px;">' + d.tier + ' · ' + (d.totalPoints||0).toLocaleString() + ' pts</div>' +
+        '<div style="margin-top:4px;">' + discountBadge + '</div>' +
+        '<div style="margin-top:2px;">' + pointsRedeemable + '</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div style="display:grid;grid-template-columns:1fr;gap:8px;">' +
+      (d.discountPercent > 0
+        ? '<button onclick="loyaltyApplyDiscount()" ' +
+            'style="background:#1a1a2a;border:1px solid #4a9eff;color:#4a9eff;border-radius:6px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;">' +
+            '🏷️ Apply ' + d.discountPercent + '% entry discount (customer must approve)' +
+          '</button>'
+        : '') +
+      (d.pointsValue > 0
+        ? '<button onclick="loyaltyRedeemPoints()" ' +
+            'style="background:#1a1a1a;border:1px solid #f5c518;color:#f5c518;border-radius:6px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;">' +
+            '⭐ Redeem points — $' + d.pointsValue + ' off entry (customer must approve)' +
+          '</button>'
+        : '') +
+    '</div>' +
+    '<div id="loyalty-action-result" style="margin-top:8px;font-size:12px;color:#888;"></div>';
 }
 
 async function nextRoundDetail(id) {
@@ -1312,6 +1371,9 @@ function loyaltyApplyDiscount() {
 function loyaltyRedeemPoints() {
   const m = window._loyaltyMember;
   if (!m || !m.totalPoints || m.totalPoints < 100) return;
+  // Support both the QR scanner modal card and the inline detail-page card
+  window._loyaltyRedeemCardEl = document.getElementById('loyalty-member-card') ||
+                                 document.getElementById('loyalty-scan-result-detail');
 
   const TIERS = [
     { points: 100,  dollar: 1  },
@@ -1325,7 +1387,7 @@ function loyaltyRedeemPoints() {
   if (!affordable.length) return;
 
   // Replace the action area with tier picker
-  const cardEl = document.getElementById('loyalty-member-card');
+  const cardEl = window._loyaltyRedeemCardEl;
   if (!cardEl) return;
 
   const tierButtons = affordable.map(t =>
