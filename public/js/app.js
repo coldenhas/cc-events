@@ -641,6 +641,8 @@ async function deleteEvent(id, name) {
 const loaders = { dashboard:loadDashboard, players:loadPlayers, tournaments:loadTournaments, events:loadEvents, rankings:loadRankings };
 
 function navigate(page, arg) {
+  // Clear loyalty member state when leaving a tournament detail page
+  if (page !== 'tournament-detail') window._loyaltyMember = null;
   // tournament-detail is a sub-page — don't update nav highlight
   if (page !== 'tournament-detail') {
     document.querySelectorAll('.nav-link').forEach(el => el.classList.toggle('active', el.dataset.page===page));
@@ -807,6 +809,12 @@ async function loadTournamentDetail(id) {
           else el.textContent = '';
         } catch(e) { el.textContent = ''; }
       });
+    }
+
+    // Re-inject loyalty member card if staff had one loaded before the page reloaded
+    // (page reload from addLoyaltyMemberToTourney wipes the slot — restore it so Redeem is still accessible)
+    if (window._loyaltyMember && window._loyaltyMember.found) {
+      showLoyaltyMemberCardInline(window._loyaltyMember);
     }
   }, 100);
 }
