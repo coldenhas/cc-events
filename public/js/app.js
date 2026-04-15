@@ -869,16 +869,19 @@ async function searchForTourneyDetail(tid, q) {
       return;
     }
     const members = d.members || (d.found ? [d] : []);
-    resultsEl.innerHTML = members.map(m => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;background:var(--bg2);border-radius:6px;margin-bottom:6px;cursor:pointer;"
-        onclick="addTourneyPlayerDetail('${tid}','${m.shopifyCustomerId||m.customerId}')">
+    resultsEl.innerHTML = members.map(m => {
+      const pid = m.shopifyCustomerId || m.customerId || m._id;
+      const displayName = `${m.firstName||''} ${m.lastName||''}`.trim() || m.name || 'Member';
+      return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;background:var(--bg2);border-radius:6px;margin-bottom:6px;">
         <div>
-          <span style="font-weight:600">${m.firstName || 'Member'} ${m.lastName || ''}</span>
+          <span style="font-weight:600">${displayName}</span>
           <span style="font-size:11px;color:#888;margin-left:8px;">${m.email || ''}</span>
           <span style="font-size:11px;color:#f5c518;margin-left:8px;">${m.tierIcon || '⭐'} ${m.tier || 'Base'}</span>
         </div>
-        <button class="btn btn-sm btn-primary">Add</button>
-      </div>`).join('');
+        <button class="btn btn-sm btn-primary" onclick="addLoyaltyMemberToTourney('${tid}','${pid}','${displayName.replace(/'/g,"\\'")}','${m.email||''}')">Add</button>
+      </div>`;
+    }).join('');
   } catch(e) { console.error(e); }
 }
 

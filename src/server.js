@@ -1,6 +1,7 @@
 const express = require('express');
 const path    = require('path');
 const session = require('express-session');
+const MemoryStore = require('memorystore')(session);
 const crypto  = require('crypto');
 const app     = express();
 
@@ -12,6 +13,7 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'cc-events-v2-' + crypto.randomBytes(8).toString('hex'),
   resave: false,
   saveUninitialized: false,
+  store: new MemoryStore({ checkPeriod: 86400000 }), // prune expired every 24h
   cookie: { secure: false, maxAge: 1000 * 60 * 60 * 24 } // 24 hours
 }));
 
